@@ -121,6 +121,21 @@ function initApp() {
   const savedRoutines = localStorage.getItem('wrext_routines');
   if (savedRoutines) {
     state.routines = JSON.parse(savedRoutines);
+    // Migration: clean up any legacy supersetType properties from saved routines
+    let migrated = false;
+    state.routines.forEach(r => {
+      if (r.exercises) {
+        r.exercises.forEach(ex => {
+          if (ex.hasOwnProperty('supersetType')) {
+            delete ex.supersetType;
+            migrated = true;
+          }
+        });
+      }
+    });
+    if (migrated) {
+      localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
+    }
   } else {
     state.routines = [...DEFAULT_ROUTINES];
     localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
@@ -162,6 +177,14 @@ function initApp() {
   if (savedSession) {
     if (confirm("You have an unsaved active workout session. Would you like to resume?")) {
       state.activeSession = JSON.parse(savedSession);
+      // Migration: clean up legacy supersetType from active session exercises
+      if (state.activeSession.exercises) {
+        state.activeSession.exercises.forEach(ex => {
+          if (ex.hasOwnProperty('supersetType')) {
+            delete ex.supersetType;
+          }
+        });
+      }
       resumeWorkoutSession();
     } else {
       localStorage.removeItem('wrext_active_session');
