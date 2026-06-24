@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Wrext - Workout Extreme Tracker</title>
+  <meta name="description" content="Premium calisthenics & strength progression tracker with Google Sheets sync.">
+  
+  <!-- PWA Support -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#06070a">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  
+  <div class="app-container">
+    
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="logo-container">
+        <div class="logo-icon">W</div>
+        <span class="logo-text">WREXT</span>
+      </div>
+      <div id="connection-badge" class="sync-badge online">
+        <span class="sync-dot"></span>
+        <span class="sync-status-text">Online</span>
+      </div>
+    </header>
+    
+    <!-- DASHBOARD VIEW -->
+    <main id="view-dashboard" class="page-view active">
+      <div class="welcome-section">
+        <h1>Welcome Back</h1>
+        <p class="subtitle">Let's crush today's progression targets.</p>
+      </div>
+      
+      <div class="card streak-card">
+        <div class="streak-info">
+          <span class="streak-icon">🔥</span>
+          <div>
+            <div style="font-size: 13px; color: var(--text-muted)">Current Streak</div>
+            <div class="streak-num"><span id="streak-days">0</span> Days</div>
+          </div>
+        </div>
+        <span style="font-size: 11px; font-weight: 600; color: var(--text-muted)">Keep it up!</span>
+      </div>
+      
+      <div class="card sync-status-card" id="sync-status-card" style="display: none;">
+        <div>
+          <div style="font-weight: 600; font-size: 14px;">Offline Logs Queued</div>
+          <div class="sync-text">There are <span class="sync-count" id="offline-logs-count">0</span> workouts waiting to sync.</div>
+        </div>
+        <button class="btn btn-secondary" style="width: auto; padding: 8px 14px; font-size: 13px;" id="btn-sync-now">Sync Now</button>
+      </div>
+      
+      <div class="section-title">
+        <span>Quick Start Routine</span>
+      </div>
+      <div class="routine-list" id="dashboard-routine-list">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+      
+      <div class="section-title" style="margin-top: 24px;">
+        <span>Recent Activity</span>
+      </div>
+      <div id="recent-logs-list">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </main>
+    
+    <!-- ROUTINES VIEW -->
+    <main id="view-routines" class="page-view">
+      <div class="welcome-section">
+        <h1>Your Routines</h1>
+        <p class="subtitle">Select a pre-configured template or build a new one.</p>
+      </div>
+      
+      <button class="btn btn-primary" id="btn-create-routine" style="margin-bottom: 20px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        Create Custom Routine
+      </button>
+      
+      <div class="routine-list" id="routines-list">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </main>
+    
+    <!-- ACTIVE WORKOUT VIEW -->
+    <main id="view-active-workout" class="page-view">
+      <div class="active-workout-header">
+        <div>
+          <h1 id="active-workout-name">Active Workout</h1>
+          <span class="subtitle" id="active-workout-time">00:00:00</span>
+        </div>
+        <div class="timer-bubble" id="active-timer-trigger">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          Rest Timer
+        </div>
+      </div>
+      
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label class="form-label">Workout Date / Weekday</label>
+        <input type="text" id="active-workout-date-input" class="form-input" placeholder="e.g. Mon (W1)">
+      </div>
+      
+      <div class="active-exercises" id="active-exercises-list">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+      
+      <div style="margin-top: 24px; display: flex; flex-direction: column; gap: 12px;">
+        <button class="btn btn-secondary" id="btn-add-exercise">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          Add Custom Exercise
+        </button>
+        
+        <button class="btn btn-primary" id="btn-complete-workout" style="padding: 16px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          Complete Workout
+        </button>
+        
+        <button class="btn btn-danger" id="btn-cancel-workout">
+          Cancel Session
+        </button>
+      </div>
+    </main>
+    
+    <!-- HISTORY VIEW -->
+    <main id="view-history" class="page-view">
+      <div class="welcome-section">
+        <h1>Workout Logs</h1>
+        <p class="subtitle">Track your long-term progression logs.</p>
+      </div>
+      
+      <div id="history-list">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </main>
+    
+    <!-- SETTINGS VIEW -->
+    <main id="view-settings" class="page-view">
+      <div class="welcome-section">
+        <h1>Settings</h1>
+        <p class="subtitle">Configure Google Sheet credentials and backing preferences.</p>
+      </div>
+      
+      <div class="settings-section-title">Google Sheets Integration</div>
+      <div class="card">
+        <div class="form-group">
+          <label class="form-label" for="settings-sheet-url">Apps Script Web App URL</label>
+          <input type="text" id="settings-sheet-url" class="form-input" placeholder="https://script.google.com/macros/s/.../exec">
+        </div>
+        <div class="form-group" style="margin-bottom: 8px;">
+          <label class="form-label" for="settings-api-token">API Token (Optional)</label>
+          <input type="password" id="settings-api-token" class="form-input" placeholder="Enter token from Script Properties">
+        </div>
+        <button class="btn btn-secondary" id="btn-test-connection" style="margin-top: 10px; font-size: 13px;">
+          Test Sync Endpoint
+        </button>
+      </div>
+      
+      <details class="setup-guide-box">
+        <summary>View Step-by-Step Setup Guide</summary>
+        <ol>
+          <li>Open your Google Sheet: <br><a href="https://docs.google.com/spreadsheets/d/15POYJcFxaTpEIcK0_Q73oGoTRkw4xSidooc-vJjUniE/edit" target="_blank" style="color: var(--primary)">Spreadsheet link</a>.</li>
+          <li>Click **Extensions** -> **Apps Script**.</li>
+          <li>Create a script by copy-pasting the contents of `google-apps-script.js` from the Wrext repository.</li>
+          <li>(Optional) Add a script property `API_TOKEN` in project settings for security.</li>
+          <li>Click **Deploy** -> **New deployment**.</li>
+          <li>Set type to **Web App**, set *Execute as* to **Me**, and set *Who has access* to **Anyone**.</li>
+          <li>Click **Deploy**, authorize permissions, copy the Web App URL, and paste it into the field above.</li>
+        </ol>
+      </details>
+      
+      <div class="settings-section-title">Rest Timer Configuration</div>
+      <div class="card">
+        <div class="form-group">
+          <label class="form-label" for="settings-rest-timer">Default Rest Duration (Seconds)</label>
+          <input type="number" id="settings-rest-timer" class="form-input" value="90" min="10" max="600">
+        </div>
+        <div class="audio-test-row">
+          <span style="font-size: 14px;">Play Sound on Timer Finish</span>
+          <label class="switch-container" style="position: relative; display: inline-block; width: 44px; height: 24px;">
+            <input type="checkbox" id="settings-sound-enabled" checked style="opacity: 0; width: 0; height: 0;">
+            <span class="slider" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--bg-surface-elevated); transition: .4s; border-radius: 24px; border: 1px solid var(--border-light);"></span>
+          </label>
+        </div>
+      </div>
+      
+      <div class="settings-section-title">Data Backup</div>
+      <div class="card">
+        <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+          <button class="btn btn-secondary" id="btn-export-data" style="font-size: 13px; padding: 10px 14px;">Export JSON</button>
+          <button class="btn btn-secondary" id="btn-import-data" style="font-size: 13px; padding: 10px 14px;">Import JSON</button>
+        </div>
+        <input type="file" id="import-file-input" style="display: none;" accept=".json">
+        <button class="btn btn-danger" id="btn-reset-app" style="font-size: 13px; padding: 10px 14px;">Reset All Application Data</button>
+      </div>
+    </main>
+    
+    <!-- BOTTOM NAV BAR -->
+    <nav class="app-nav">
+      <button class="nav-item active" data-view="view-dashboard">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+        Dashboard
+      </button>
+      <button class="nav-item" data-view="view-routines">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+        Routines
+      </button>
+      <button class="nav-item" data-view="view-history">
+        <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        History
+      </button>
+      <button class="nav-item" data-view="view-settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path></svg>
+        Settings
+      </button>
+    </nav>
+    
+    <!-- REST TIMER MODAL -->
+    <div class="timer-overlay" id="timer-overlay">
+      <div class="timer-modal">
+        <div class="timer-circle-wrap">
+          <svg class="timer-circle-svg">
+            <circle class="timer-circle-bg" cx="90" cy="90" r="80"></circle>
+            <circle class="timer-circle-progress" id="timer-circle-progress" cx="90" cy="90" r="80"></circle>
+          </svg>
+          <div class="timer-countdown">
+            <div class="timer-time" id="timer-countdown-text">01:30</div>
+            <div class="timer-label">Resting</div>
+          </div>
+        </div>
+        
+        <div class="timer-controls">
+          <button class="btn btn-secondary" id="btn-timer-sub-30" style="padding: 10px;">-30s</button>
+          <button class="btn btn-secondary" id="btn-timer-add-30" style="padding: 10px;">+30s</button>
+          <button class="btn btn-primary" id="btn-timer-skip" style="padding: 10px;">Skip</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- CREATE/EDIT ROUTINE MODAL -->
+    <div class="modal-overlay" id="routine-modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title" id="routine-modal-title">Create Routine</div>
+          <button class="modal-close" id="btn-close-routine-modal">&times;</button>
+        </div>
+        <div class="modal-body" style="max-height: 60vh; overflow-y: auto; padding-right: 4px;">
+          <div class="form-group">
+            <label class="form-label" for="modal-routine-name">Routine Name</label>
+            <input type="text" id="modal-routine-name" class="form-input" placeholder="e.g. Heavy Day (Monday)">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="modal-routine-day-type">Day Type</label>
+            <input type="text" id="modal-routine-day-type" class="form-input" placeholder="e.g. Heavy, Volume">
+          </div>
+          
+          <div class="form-label" style="margin-top: 16px; margin-bottom: 10px;">Exercises</div>
+          <div id="modal-exercises-list" style="display: flex; flex-direction: column; gap: 10px;">
+            <!-- Appended dynamically -->
+          </div>
+          
+          <button class="btn btn-secondary" id="btn-modal-add-exercise-field" style="margin-top: 14px; font-size: 13px; padding: 10px;">
+            + Add Exercise
+          </button>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btn-cancel-routine-modal">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-routine">Save Routine</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- ADD EXERCISE TO ACTIVE WORKOUT MODAL -->
+    <div class="modal-overlay" id="exercise-modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title">Add Exercise</div>
+          <button class="modal-close" id="btn-close-exercise-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label" for="modal-exercise-name">Exercise Name</label>
+            <input type="text" id="modal-exercise-name" class="form-input" placeholder="e.g. Deep Push-ups">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="modal-exercise-superset">Superset Type / Note (Optional)</label>
+            <input type="text" id="modal-exercise-superset" class="form-input" placeholder="e.g. Straight Sets, Antagonist Superset">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="modal-exercise-weight">Default Weight (kg)</label>
+            <input type="number" id="modal-exercise-weight" class="form-input" value="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="modal-exercise-sets">Number of Sets</label>
+            <input type="number" id="modal-exercise-sets" class="form-input" value="3" min="1" max="10">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btn-cancel-exercise-modal">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-exercise">Add Exercise</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- OFFLINE TOAST NOTIFICATION -->
+    <div class="toast-banner" id="toast-banner">
+      <div class="toast-message" id="toast-message">Workouts synced to Google Sheets!</div>
+      <button class="toast-btn" id="btn-dismiss-toast">Dismiss</button>
+    </div>
+    
+  </div>
+
+  <!-- Scripts -->
+  <script src="sheets-service.js"></script>
+  <script src="app.js"></script>
+  
+  <script>
+    // Register Service Worker for PWA Offline Caching
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('Service Worker registered successfully!', reg.scope))
+          .catch(err => console.log('Service Worker registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
