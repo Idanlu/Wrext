@@ -59,10 +59,10 @@ const DEFAULT_ROUTINES = [
     name: "Heavy Day (Monday)",
     dayType: "Heavy",
     exercises: [
-      { name: "Weighted Pull-up", weight: 20, setsCount: 3, supersetType: "Antagonist Superset (with Push-ups)" },
-      { name: "Deep Push-ups", weight: 0, setsCount: 3, supersetType: "Antagonist Superset (with Pull-ups)" },
-      { name: "Hanging Knee Raises", weight: 0, setsCount: 3, supersetType: "Core" },
-      { name: "Active Hang", weight: 0, setsCount: 2, supersetType: "Finisher" }
+      { name: "Weighted Pull-up", weight: 20, setsCount: 3 },
+      { name: "Deep Push-ups", weight: 0, setsCount: 3 },
+      { name: "Hanging Knee Raises", weight: 0, setsCount: 3 },
+      { name: "Active Hang", weight: 0, setsCount: 2 }
     ]
   },
   {
@@ -70,9 +70,9 @@ const DEFAULT_ROUTINES = [
     name: "Volume Day (Wednesday)",
     dayType: "Volume",
     exercises: [
-      { name: "Weighted Pull-up", weight: 15, setsCount: 4, supersetType: "Straight Sets" },
-      { name: "Cossack Squats", weight: 7, setsCount: 3, supersetType: "Legs" },
-      { name: "Plank", weight: 0, setsCount: 2, supersetType: "Core" }
+      { name: "Weighted Pull-up", weight: 15, setsCount: 4 },
+      { name: "Cossack Squats", weight: 7, setsCount: 3 },
+      { name: "Plank", weight: 0, setsCount: 2 }
     ]
   }
 ];
@@ -423,16 +423,19 @@ function startWorkoutSession(routine) {
     name: routine.name,
     dayType: routine.dayType || "Other",
     date: getDefaultWorkoutDate(),
+    checkCounter: 0, // Global counter for ordering checked sets
     exercises: routine.exercises.map(ex => {
       // Find previous history weights/reps for this exercise to prefill placeholders
       const prevData = getPreviousExercisePerformance(ex.name);
       
       const sets = [];
       const checkedSets = [];
+      const completionOrders = [];
       for (let i = 0; i < ex.setsCount; i++) {
         // Prefill with history or default
         sets.push(prevData.reps[i] || "");
         checkedSets.push(false);
+        completionOrders.push(null);
       }
       
       return {
@@ -440,9 +443,9 @@ function startWorkoutSession(routine) {
         weight: prevData.weight !== null ? prevData.weight : ex.weight,
         sets: sets,
         checked: checkedSets,
+        completionOrders: completionOrders, // Order of completion tracking
         prevSets: prevData.reps,
         prevWeight: prevData.weight,
-        supersetType: ex.supersetType || "",
         notes: ""
       };
     })
@@ -497,14 +500,10 @@ function renderActiveExercises() {
     const card = document.createElement('div');
     card.className = 'card exercise-card';
     
-    // Build superset tag HTML
-    const supersetTag = ex.supersetType ? `<span class="exercise-superset">${ex.supersetType}</span>` : '';
-    
     card.innerHTML = `
       <div class="exercise-header">
         <div>
           <span class="exercise-title">${ex.name}</span>
-          ${supersetTag}
         </div>
         <button class="btn-text danger btn-delete-exercise-active" style="width: auto; padding: 4px;">Remove</button>
       </div>
@@ -581,11 +580,16 @@ function renderActiveExercises() {
           row.classList.add('completed');
           checkbox.classList.add('checked');
           
+          // Increment global counter and track order
+          state.activeSession.checkCounter = (state.activeSession.checkCounter || 0) + 1;
+          ex.completionOrders[setIndex] = state.activeSession.checkCounter;
+          
           // Auto start Rest Timer!
           startRestTimer();
         } else {
           row.classList.remove('completed');
           checkbox.classList.remove('checked');
+          ex.completionOrders[setIndex] = null;
         }
         
         saveActiveSessionLocal();
@@ -598,6 +602,8 @@ function renderActiveExercises() {
     card.querySelector('.btn-add-set-active').addEventListener('click', () => {
       ex.sets.push("");
       ex.checked.push(false);
+      if (!ex.completionOrders) ex.completionOrders = [];
+      ex.completionOrders.push(null);
       renderActiveExercises();
       saveActiveSessionLocal();
     });
@@ -606,6 +612,7 @@ function renderActiveExercises() {
       if (ex.sets.length > 1) {
         ex.sets.pop();
         ex.checked.pop();
+        if (ex.completionOrders) ex.completionOrders.pop();
         renderActiveExercises();
         saveActiveSessionLocal();
       }
@@ -713,16 +720,91 @@ function closeRestTimer() {
 // ----------------------------------------------------
 // Workout Log Completion & Sync
 // ----------------------------------------------------
+// Helper to clean exercise name for superset label
+function getCleanExerciseName(name) {
+  const lower = name.toLowerCase();
+  if (lower.includes("pull-up")) return "Pull-ups";
+  if (lower.includes("push-up")) return "Push-ups";
+  if (lower.includes("squat")) return "Squats";
+  if (lower.includes("raise")) return "Raises";
+  if (lower.includes("hang")) return "Hangs";
+  if (lower.includes("plank")) return "Plank";
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+// Helper to get default category for exercise if not in a superset
+function getDefaultCategory(name) {
+  const lower = name.toLowerCase();
+  if (lower.includes("pull-up")) return "Straight Sets";
+  if (lower.includes("squat")) return "Legs";
+  if (lower.includes("raise")) return "Core";
+  if (lower.includes("plank")) return "Core";
+  if (lower.includes("hang")) return "Finisher";
+  if (lower.includes("repeater")) return "Grip Finisher";
+  return "Straight Sets";
+}
+
+// Compute superset / category types for each exercise based on execution sequence
+function computeSupersetTypes(exercises) {
+  const exSpans = exercises.map((ex, index) => {
+    const orders = (ex.completionOrders || []).filter(val => val !== null && val !== undefined);
+    if (orders.length === 0) return null;
+    return {
+      index: index,
+      name: ex.name,
+      min: Math.min(...orders),
+      max: Math.max(...orders),
+      orders: orders
+    };
+  });
+
+  return exercises.map((ex, i) => {
+    const spanI = exSpans[i];
+    if (!spanI) {
+      return getDefaultCategory(ex.name);
+    }
+
+    const partners = [];
+    exSpans.forEach((spanJ, j) => {
+      if (j === i || !spanJ) return;
+      if (spanI.min < spanJ.max && spanJ.min < spanI.max) {
+        partners.push(spanJ.name);
+      }
+    });
+
+    if (partners.length > 0) {
+      const cleanSelf = getCleanExerciseName(ex.name);
+      const cleanPartners = partners.map(getCleanExerciseName);
+      const uniquePartners = [...new Set(cleanPartners)];
+      const partnerStr = uniquePartners.join(' & ');
+
+      if ((cleanSelf === "Pull-ups" && partnerStr === "Push-ups") || 
+          (cleanSelf === "Push-ups" && partnerStr === "Pull-ups")) {
+        return `Antagonist Superset (with ${partnerStr})`;
+      }
+      return `Superset (with ${partnerStr})`;
+    } else {
+      return getDefaultCategory(ex.name);
+    }
+  });
+}
+
+// ----------------------------------------------------
+// Workout Log Completion & Sync
+// ----------------------------------------------------
 async function completeActiveWorkout() {
   if (!state.activeSession) return;
   
   // Read date from form
   const finalDate = document.getElementById('active-workout-date-input').value;
   
+  // Compute superset types dynamically based on set check order
+  const supersetTypes = computeSupersetTypes(state.activeSession.exercises);
+  
   // Map exercises data, only keeping logs where sets have value
   const loggedExercises = [];
   
-  state.activeSession.exercises.forEach(ex => {
+  state.activeSession.exercises.forEach((ex, exIdx) => {
     // Keep sets that are checked or contain a valid number
     const activeSets = [];
     ex.sets.forEach((setVal, index) => {
@@ -737,7 +819,7 @@ async function completeActiveWorkout() {
         name: ex.name,
         weight: ex.weight,
         sets: activeSets,
-        supersetType: ex.supersetType,
+        supersetType: supersetTypes[exIdx], // Automatically calculated
         notes: ex.notes
       });
     }
@@ -874,7 +956,7 @@ function openRoutineModal(routine = null) {
     dayTypeInput.value = routine.dayType || "";
     
     routine.exercises.forEach(ex => {
-      addExerciseFieldToModal(ex.name, ex.weight, ex.setsCount, ex.supersetType);
+      addExerciseFieldToModal(ex.name, ex.weight, ex.setsCount);
     });
   } else {
     editingRoutineId = null;
@@ -888,7 +970,7 @@ function openRoutineModal(routine = null) {
   modal.classList.add('active');
 }
 
-function addExerciseFieldToModal(name = "", weight = 0, sets = 3, superset = "") {
+function addExerciseFieldToModal(name = "", weight = 0, sets = 3) {
   const container = document.getElementById('modal-exercises-list');
   const row = document.createElement('div');
   row.className = 'modal-exercise-row';
@@ -916,10 +998,6 @@ function addExerciseFieldToModal(name = "", weight = 0, sets = 3, superset = "")
         <label class="form-label" style="font-size: 11px;">Default Sets</label>
         <input type="number" class="form-input modal-ex-sets" value="${sets}" min="1" max="10">
       </div>
-    </div>
-    <div class="form-group" style="margin-bottom: 0;">
-      <label class="form-label" style="font-size: 11px;">Superset Type</label>
-      <input type="text" class="form-input modal-ex-superset" value="${superset}" placeholder="e.g. Straight Sets, Antagonist Superset">
     </div>
   `;
   
@@ -955,7 +1033,6 @@ function saveRoutineFromModal() {
     const exName = row.querySelector('.modal-ex-name').value.trim();
     const exWeight = parseFloat(row.querySelector('.modal-ex-weight').value) || 0;
     const exSets = parseInt(row.querySelector('.modal-ex-sets').value) || 3;
-    const exSuperset = row.querySelector('.modal-ex-superset').value.trim();
     
     if (!exName) {
       alert("Please enter a name for all exercises.");
@@ -966,8 +1043,7 @@ function saveRoutineFromModal() {
     exercises.push({
       name: exName,
       weight: exWeight,
-      setsCount: exSets,
-      supersetType: exSuperset
+      setsCount: exSets
     });
   });
   
@@ -1057,7 +1133,6 @@ function setupEventListeners() {
   
   document.getElementById('btn-save-exercise').addEventListener('click', () => {
     const name = document.getElementById('modal-exercise-name').value.trim();
-    const superset = document.getElementById('modal-exercise-superset').value.trim();
     const weight = parseFloat(document.getElementById('modal-exercise-weight').value) || 0;
     const setsCount = parseInt(document.getElementById('modal-exercise-sets').value) || 3;
     
@@ -1069,9 +1144,11 @@ function setupEventListeners() {
     if (state.activeSession) {
       const sets = [];
       const checkedSets = [];
+      const completionOrders = [];
       for(let i=0; i<setsCount; i++) {
         sets.push("");
         checkedSets.push(false);
+        completionOrders.push(null);
       }
       
       state.activeSession.exercises.push({
@@ -1079,7 +1156,7 @@ function setupEventListeners() {
         weight,
         sets,
         checked: checkedSets,
-        supersetType: superset,
+        completionOrders: completionOrders,
         notes: ""
       });
       
@@ -1088,7 +1165,6 @@ function setupEventListeners() {
       
       // Reset inputs & close modal
       document.getElementById('modal-exercise-name').value = "";
-      document.getElementById('modal-exercise-superset').value = "";
       document.getElementById('modal-exercise-weight').value = "0";
       document.getElementById('modal-exercise-sets').value = "3";
       document.getElementById('exercise-modal-overlay').classList.remove('active');
