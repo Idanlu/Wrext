@@ -1129,6 +1129,56 @@ function setupEventListeners() {
     document.getElementById('toast-banner').classList.remove('active');
   });
   
+  // Pull from Sheet button
+  document.getElementById('btn-pull-from-sheet').addEventListener('click', async () => {
+    if (!state.settings.sheetUrl) {
+      alert("Please configure your Google Sheets Web App URL in Settings first.");
+      return;
+    }
+    
+    showToast("Pulling workout history from Google Sheet...", true);
+    
+    const result = await SheetsSyncService.fetchHistory(
+      state.settings.sheetUrl,
+      state.settings.apiToken
+    );
+    
+    if (!result.success) {
+      showToast("Pull failed. Check settings.");
+      alert("Failed to pull history: " + result.error);
+      return;
+    }
+    
+    if (result.workouts.length === 0) {
+      showToast("No workouts found in your sheet.");
+      return;
+    }
+    
+    // Merge imported workouts into history, skipping duplicates
+    const existingIds = new Set(state.history.map(h => h.id));
+    // Also build a set of existing date+dayType combos for smarter dedup
+    const existingKeys = new Set(state.history.map(h => `${h.date}|||${h.dayType}`));
+    
+    let importedCount = 0;
+    result.workouts.forEach(w => {
+      const key = `${w.date}|||${w.dayType}`;
+      if (!existingIds.has(w.id) && !existingKeys.has(key)) {
+        state.history.push(w);
+        importedCount++;
+      }
+    });
+    
+    if (importedCount > 0) {
+      // Sort history: most recent first (by reverse insertion order from sheet)
+      localStorage.setItem('wrext_history', JSON.stringify(state.history));
+      renderHistory();
+      renderDashboard();
+      showToast(`Imported ${importedCount} workouts from your sheet!`);
+    } else {
+      showToast("All sheet workouts are already in your history.");
+    }
+  });
+  
   // Active timer trigger rest timer modal manually
   document.getElementById('active-timer-trigger').addEventListener('click', () => {
     startRestTimer();

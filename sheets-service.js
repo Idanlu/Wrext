@@ -98,6 +98,84 @@ const SheetsSyncService = {
     } catch (error) {
       return { success: false, error: `Connection failed: ${error.message}. Check URL or CORS settings.` };
     }
+  },
+
+  // Fetch all workout history from Google Sheets
+  async fetchHistory(sheetUrl, apiToken) {
+    if (!sheetUrl) {
+      return { success: false, error: "URL is required" };
+    }
+
+    try {
+      // Build GET URL with token as query parameter
+      const separator = sheetUrl.includes('?') ? '&' : '?';
+      const url = apiToken
+        ? `${sheetUrl}${separator}token=${encodeURIComponent(apiToken)}`
+        : sheetUrl;
+
+      const response = await fetch(url, {
+        method: "GET",
+        mode: "cors"
+      });
+
+      if (!response.ok) {
+        return { success: false, error: `Server returned status ${response.status}` };
+      }
+
+      const result = await response.json();
+      if (result.status === "success" && Array.isArray(result.rows)) {
+        // Group flat rows into workout sessions by Date + Day Type
+        const workouts = this._groupRowsIntoWorkouts(result.rows);
+        return { success: true, workouts: workouts, rawCount: result.rows.length };
+      } else {
+        return { success: false, error: result.message || "Failed to fetch history" };
+      }
+    } catch (error) {
+      return { success: false, error: `Fetch failed: ${error.message}` };
+    }
+  },
+
+  // Group flat spreadsheet rows into workout log objects
+  _groupRowsIntoWorkouts(rows) {
+    const groups = {};
+
+    rows.forEach(row => {
+      // Skip rows with no exercise name
+      if (!row.name) return;
+
+      // Create a unique key from Date + Day Type
+      const key = `${row.date}|||${row.dayType}`;
+
+      if (!groups[key]) {
+        groups[key] = {
+          date: String(row.date),
+          dayType: String(row.dayType),
+          exercises: []
+        };
+      }
+
+      // Build sets array from set1..set4, keeping non-empty values
+      const sets = [row.set1, row.set2, row.set3, row.set4].filter(s => s !== "" && s !== undefined && s !== null);
+
+      groups[key].exercises.push({
+        name: String(row.name),
+        weight: parseFloat(row.weight) || 0,
+        sets: sets,
+        supersetType: String(row.supersetType || ""),
+        notes: String(row.notes || "")
+      });
+    });
+
+    // Convert to array and create proper log objects
+    return Object.values(groups).map(group => ({
+      id: 'imported-' + group.date.replace(/\s+/g, '-') + '-' + group.dayType.replace(/\s+/g, '-'),
+      name: `${group.dayType} Day`,
+      dayType: group.dayType,
+      date: group.date,
+      duration: "",
+      exercises: group.exercises,
+      synced: true // Already in the sheet
+    }));
   }
 };
 
