@@ -64,7 +64,8 @@ function doPost(e) {
           setsArray[3] || "",
           item.supersetType || "",
           item.notes || "",
-          item.restTime !== undefined ? item.restTime : ""
+          item.restTime !== undefined ? item.restTime : "",
+          item.weekNumber || ""
         ];
         sheet.appendRow(rowData);
         rowsAdded++;
@@ -107,7 +108,7 @@ function doGet(e) {
     }
     
     // 3. Read all data rows (skip header row 1)
-    var dataRange = sheet.getRange(2, 1, lastRow - 1, 12); // Columns A-L
+    var dataRange = sheet.getRange(2, 1, lastRow - 1, 13); // Columns A-M
     var values = dataRange.getValues();
     
     var rows = values.map(function(row, idx) {
@@ -123,7 +124,8 @@ function doGet(e) {
         set4: row[8] !== "" ? String(row[8]) : "",
         supersetType: row[9] || "",
         notes: row[10] || "",
-        restTime: row[11] !== undefined ? row[11] : ""
+        restTime: row[11] !== undefined ? row[11] : "",
+        weekNumber: row[12] || ""
       };
     });
     
