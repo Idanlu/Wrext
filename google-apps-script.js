@@ -63,7 +63,8 @@ function doPost(e) {
           setsArray[2] || "",
           setsArray[3] || "",
           item.supersetType || "",
-          item.notes || ""
+          item.notes || "",
+          item.restTime !== undefined ? item.restTime : ""
         ];
         sheet.appendRow(rowData);
         rowsAdded++;
@@ -106,7 +107,7 @@ function doGet(e) {
     }
     
     // 3. Read all data rows (skip header row 1)
-    var dataRange = sheet.getRange(2, 1, lastRow - 1, 11); // Columns A-K
+    var dataRange = sheet.getRange(2, 1, lastRow - 1, 12); // Columns A-L
     var values = dataRange.getValues();
     
     var rows = values.map(function(row, idx) {
@@ -121,7 +122,8 @@ function doGet(e) {
         set3: row[7] !== "" ? String(row[7]) : "",
         set4: row[8] !== "" ? String(row[8]) : "",
         supersetType: row[9] || "",
-        notes: row[10] || ""
+        notes: row[10] || "",
+        restTime: row[11] !== undefined ? row[11] : ""
       };
     });
     

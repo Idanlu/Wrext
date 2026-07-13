@@ -29,7 +29,8 @@ const SheetsSyncService = {
           weight: parseFloat(ex.weight) || 0,
           sets: setsArray,
           supersetType: ex.supersetType || "",
-          notes: ex.notes || ""
+          notes: ex.notes || "",
+          restTime: ex.restTime !== undefined ? parseInt(ex.restTime) : 90
         };
       })
     };
@@ -162,7 +163,8 @@ const SheetsSyncService = {
         weight: parseFloat(row.weight) || 0,
         sets: sets,
         supersetType: String(row.supersetType || ""),
-        notes: String(row.notes || "")
+        notes: String(row.notes || ""),
+        restTime: row.restTime !== undefined && row.restTime !== "" ? parseInt(row.restTime) : 90
       });
     });
 

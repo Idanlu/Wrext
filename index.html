@@ -207,6 +207,21 @@
       </div>
     </main>
     
+    <!-- MINIMIZED REST TIMER BAR -->
+    <div class="minimized-timer-bar" id="minimized-timer-bar">
+      <div class="mini-timer-info">
+        <span class="mini-timer-pulse"></span>
+        <span class="mini-timer-label">Rest: <strong id="minimized-timer-text">01:30</strong></span>
+      </div>
+      <div class="mini-timer-controls">
+        <button class="btn-mini-control" id="btn-timer-mini-add-30" title="Add 30 seconds">+30s</button>
+        <button class="btn-mini-control" id="btn-timer-mini-skip" title="Skip rest">Skip</button>
+        <button class="btn-mini-control primary" id="btn-timer-mini-expand" title="Expand timer">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        </button>
+      </div>
+    </div>
+    
     <!-- BOTTOM NAV BAR -->
     <nav class="app-nav">
       <button class="nav-item active" data-view="view-dashboard">
@@ -230,6 +245,10 @@
     <!-- REST TIMER MODAL -->
     <div class="timer-overlay" id="timer-overlay">
       <div class="timer-modal">
+        <button class="timer-minimize-btn" id="btn-timer-minimize" title="Minimize timer">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M10 14l-7 7"/></svg>
+          Minimize
+        </button>
         <div class="timer-circle-wrap">
           <svg class="timer-circle-svg">
             <circle class="timer-circle-bg" cx="90" cy="90" r="80"></circle>
@@ -301,6 +320,10 @@
           <div class="form-group">
             <label class="form-label" for="modal-exercise-sets">Number of Sets</label>
             <input type="number" id="modal-exercise-sets" class="form-input" value="3" min="1" max="10">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="modal-exercise-rest">Rest Duration (Seconds)</label>
+            <input type="number" id="modal-exercise-rest" class="form-input" value="90" min="0" max="600">
           </div>
         </div>
         <div class="modal-footer">

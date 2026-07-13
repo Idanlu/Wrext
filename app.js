@@ -59,10 +59,10 @@ const DEFAULT_ROUTINES = [
     name: "Heavy Day (Monday)",
     dayType: "Heavy",
     exercises: [
-      { name: "Weighted Pull-up", weight: 20, setsCount: 3 },
-      { name: "Deep Push-ups", weight: 0, setsCount: 3 },
-      { name: "Hanging Knee Raises", weight: 0, setsCount: 3 },
-      { name: "Active Hang", weight: 0, setsCount: 2 }
+      { name: "Weighted Pull-up", weight: 20, setsCount: 3, restTime: 120 },
+      { name: "Deep Push-ups", weight: 0, setsCount: 3, restTime: 90 },
+      { name: "Hanging Knee Raises", weight: 0, setsCount: 3, restTime: 60 },
+      { name: "Active Hang", weight: 0, setsCount: 2, restTime: 60 }
     ]
   },
   {
@@ -70,9 +70,9 @@ const DEFAULT_ROUTINES = [
     name: "Volume Day (Wednesday)",
     dayType: "Volume",
     exercises: [
-      { name: "Weighted Pull-up", weight: 15, setsCount: 4 },
-      { name: "Cossack Squats", weight: 7, setsCount: 3 },
-      { name: "Plank", weight: 0, setsCount: 2 }
+      { name: "Weighted Pull-up", weight: 15, setsCount: 4, restTime: 120 },
+      { name: "Cossack Squats", weight: 7, setsCount: 3, restTime: 90 },
+      { name: "Plank", weight: 0, setsCount: 2, restTime: 60 }
     ]
   }
 ];
@@ -469,6 +469,7 @@ function startWorkoutSession(routine) {
         completionOrders: completionOrders, // Order of completion tracking
         prevSets: prevData.reps,
         prevWeight: prevData.weight,
+        restTime: ex.restTime !== undefined ? ex.restTime : (parseInt(state.settings.restDuration) || 90),
         notes: ""
       };
     })
@@ -535,6 +536,10 @@ function renderActiveExercises() {
         <div style="flex: 1;">
           <label class="form-label" style="font-size: 11px;">Weight (kg)</label>
           <input type="number" class="form-input exercise-weight-input" value="${ex.weight}" step="0.25">
+        </div>
+        <div style="flex: 1;">
+          <label class="form-label" style="font-size: 11px;">Rest (s)</label>
+          <input type="number" class="form-input exercise-rest-input" value="${ex.restTime !== undefined ? ex.restTime : 90}" min="0" max="600">
         </div>
         <div style="flex: 2;">
           <label class="form-label" style="font-size: 11px;">Exercise-specific Notes</label>
@@ -608,7 +613,9 @@ function renderActiveExercises() {
           ex.completionOrders[setIndex] = state.activeSession.checkCounter;
           
           // Auto start Rest Timer!
-          startRestTimer();
+          if (ex.restTime !== 0) {
+            startRestTimer(ex.restTime);
+          }
         } else {
           row.classList.remove('completed');
           checkbox.classList.remove('checked');
@@ -650,9 +657,14 @@ function renderActiveExercises() {
       }
     });
     
-    // Update Weight & Notes
+    // Update Weight, Rest & Notes
     card.querySelector('.exercise-weight-input').addEventListener('input', (e) => {
       ex.weight = parseFloat(e.target.value) || 0;
+      saveActiveSessionLocal();
+    });
+    
+    card.querySelector('.exercise-rest-input').addEventListener('input', (e) => {
+      ex.restTime = parseInt(e.target.value) || 0;
       saveActiveSessionLocal();
     });
     
@@ -686,6 +698,7 @@ function cancelActiveWorkout() {
 let timerInterval = null;
 let timerSecondsRemaining = 0;
 let timerTotalSeconds = 90;
+let timerMinimized = false;
 
 function startRestTimer(duration = null) {
   // Determine duration
@@ -696,11 +709,16 @@ function startRestTimer(duration = null) {
     timerTotalSeconds = duration;
   }
   
-  timerSecondsRemaining = timerTotalSeconds;
+  if (timerTotalSeconds <= 0) {
+    return;
+  }
   
-  // Show timer overlay
-  const overlay = document.getElementById('timer-overlay');
-  overlay.classList.add('active');
+  timerSecondsRemaining = timerTotalSeconds;
+  timerMinimized = false;
+  
+  // Show timer overlay and hide minimized bar
+  document.getElementById('timer-overlay').classList.add('active');
+  document.getElementById('minimized-timer-bar').classList.remove('active');
   
   updateTimerUI();
   
@@ -723,8 +741,10 @@ function startRestTimer(duration = null) {
 function updateTimerUI() {
   const minutes = Math.floor(timerSecondsRemaining / 60);
   const seconds = timerSecondsRemaining % 60;
-  document.getElementById('timer-countdown-text').textContent = 
-    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  
+  document.getElementById('timer-countdown-text').textContent = timeStr;
+  document.getElementById('minimized-timer-text').textContent = timeStr;
   
   // Update circular SVG progress
   const circle = document.getElementById('timer-circle-progress');
@@ -737,7 +757,22 @@ function updateTimerUI() {
 
 function closeRestTimer() {
   if (timerInterval) clearInterval(timerInterval);
+  timerInterval = null;
   document.getElementById('timer-overlay').classList.remove('active');
+  document.getElementById('minimized-timer-bar').classList.remove('active');
+  timerMinimized = false;
+}
+
+function minimizeRestTimer() {
+  timerMinimized = true;
+  document.getElementById('timer-overlay').classList.remove('active');
+  document.getElementById('minimized-timer-bar').classList.add('active');
+}
+
+function expandRestTimer() {
+  timerMinimized = false;
+  document.getElementById('minimized-timer-bar').classList.remove('active');
+  document.getElementById('timer-overlay').classList.add('active');
 }
 
 // ----------------------------------------------------
@@ -979,7 +1014,7 @@ function openRoutineModal(routine = null) {
     dayTypeInput.value = routine.dayType || "";
     
     routine.exercises.forEach(ex => {
-      addExerciseFieldToModal(ex.name, ex.weight, ex.setsCount);
+      addExerciseFieldToModal(ex.name, ex.weight, ex.setsCount, ex.restTime !== undefined ? ex.restTime : 90);
     });
   } else {
     editingRoutineId = null;
@@ -993,7 +1028,7 @@ function openRoutineModal(routine = null) {
   modal.classList.add('active');
 }
 
-function addExerciseFieldToModal(name = "", weight = 0, sets = 3) {
+function addExerciseFieldToModal(name = "", weight = 0, sets = 3, restTime = 90) {
   const container = document.getElementById('modal-exercises-list');
   const row = document.createElement('div');
   row.className = 'modal-exercise-row';
@@ -1012,14 +1047,18 @@ function addExerciseFieldToModal(name = "", weight = 0, sets = 3) {
       <label class="form-label" style="font-size: 11px;">Name</label>
       <input type="text" class="form-input modal-ex-name" value="${name}" placeholder="e.g. Weighted Pull-up">
     </div>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
       <div class="form-group" style="margin-bottom: 0;">
-        <label class="form-label" style="font-size: 11px;">Default Weight (kg)</label>
+        <label class="form-label" style="font-size: 11px;">Weight (kg)</label>
         <input type="number" class="form-input modal-ex-weight" value="${weight}" step="0.25">
       </div>
       <div class="form-group" style="margin-bottom: 0;">
-        <label class="form-label" style="font-size: 11px;">Default Sets</label>
+        <label class="form-label" style="font-size: 11px;">Sets</label>
         <input type="number" class="form-input modal-ex-sets" value="${sets}" min="1" max="10">
+      </div>
+      <div class="form-group" style="margin-bottom: 0;">
+        <label class="form-label" style="font-size: 11px;">Rest (s)</label>
+        <input type="number" class="form-input modal-ex-rest" value="${restTime}" min="0" max="600">
       </div>
     </div>
   `;
@@ -1056,6 +1095,7 @@ function saveRoutineFromModal() {
     const exName = row.querySelector('.modal-ex-name').value.trim();
     const exWeight = parseFloat(row.querySelector('.modal-ex-weight').value) || 0;
     const exSets = parseInt(row.querySelector('.modal-ex-sets').value) || 3;
+    const exRest = parseInt(row.querySelector('.modal-ex-rest').value) !== undefined ? parseInt(row.querySelector('.modal-ex-rest').value) : 90;
     
     if (!exName) {
       alert("Please enter a name for all exercises.");
@@ -1066,7 +1106,8 @@ function saveRoutineFromModal() {
     exercises.push({
       name: exName,
       weight: exWeight,
-      setsCount: exSets
+      setsCount: exSets,
+      restTime: exRest
     });
   });
   
@@ -1208,6 +1249,7 @@ function setupEventListeners() {
     const name = document.getElementById('modal-exercise-name').value.trim();
     const weight = parseFloat(document.getElementById('modal-exercise-weight').value) || 0;
     const setsCount = parseInt(document.getElementById('modal-exercise-sets').value) || 3;
+    const restTime = parseInt(document.getElementById('modal-exercise-rest').value) || 90;
     
     if (!name) {
       alert("Please enter an exercise name.");
@@ -1230,6 +1272,7 @@ function setupEventListeners() {
         sets,
         checked: checkedSets,
         completionOrders: completionOrders,
+        restTime,
         notes: ""
       });
       
@@ -1240,6 +1283,7 @@ function setupEventListeners() {
       document.getElementById('modal-exercise-name').value = "";
       document.getElementById('modal-exercise-weight').value = "0";
       document.getElementById('modal-exercise-sets').value = "3";
+      document.getElementById('modal-exercise-rest').value = "90";
       document.getElementById('exercise-modal-overlay').classList.remove('active');
     }
   });
@@ -1255,6 +1299,16 @@ function setupEventListeners() {
     updateTimerUI();
   });
   document.getElementById('btn-timer-skip').addEventListener('click', closeRestTimer);
+  document.getElementById('btn-timer-minimize').addEventListener('click', minimizeRestTimer);
+  
+  // Minimized Timer Controls
+  document.getElementById('btn-timer-mini-add-30').addEventListener('click', () => {
+    timerSecondsRemaining = Math.min(600, timerSecondsRemaining + 30);
+    timerTotalSeconds += 30;
+    updateTimerUI();
+  });
+  document.getElementById('btn-timer-mini-skip').addEventListener('click', closeRestTimer);
+  document.getElementById('btn-timer-mini-expand').addEventListener('click', expandRestTimer);
   
   // Routine Modals Close
   document.getElementById('btn-close-routine-modal').addEventListener('click', () => {

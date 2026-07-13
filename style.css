@@ -787,12 +787,13 @@ h1 {
 }
 
 .timer-modal {
+  position: relative;
   background: var(--bg-surface);
   border: 1.5px solid var(--border-glow);
   width: 85%;
   max-width: 360px;
   border-radius: var(--border-radius-lg);
-  padding: 24px;
+  padding: 48px 24px 24px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -986,3 +987,135 @@ h1 {
   padding: 10px 12px;
   margin-top: 10px;
 }
+
+/* Minimized Rest Timer Bar */
+.minimized-timer-bar {
+  position: fixed;
+  bottom: calc(58px + var(--safe-area-bottom)); /* Sit right above navigation bar */
+  width: 100%;
+  max-width: 498px; /* Match app-nav width */
+  background: rgba(22, 26, 38, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.3);
+  display: none; /* Controlled by JavaScript: set display: flex */
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  z-index: 99;
+  box-sizing: border-box;
+}
+
+.minimized-timer-bar.active {
+  display: flex;
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.mini-timer-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mini-timer-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--primary);
+  box-shadow: 0 0 8px var(--primary-glow);
+  animation: pulseGlow 1.5s infinite ease-in-out;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+.mini-timer-label {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.mini-timer-label strong {
+  color: var(--primary);
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.mini-timer-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-mini-control {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-light);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: var(--border-radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-fast);
+}
+
+.btn-mini-control:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-mini-control.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #06070a;
+}
+
+.btn-mini-control.primary:hover {
+  filter: brightness(1.1);
+}
+
+/* Timer Minimize Button */
+.timer-minimize-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  padding: 6px 12px;
+  border-radius: var(--border-radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: var(--transition-fast);
+  z-index: 10;
+}
+
+.timer-minimize-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.timer-minimize-btn svg {
+  stroke: currentColor;
+}
+
