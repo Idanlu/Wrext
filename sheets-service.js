@@ -112,6 +112,59 @@ const SheetsSyncService = {
     }
   },
 
+  // Sync all routines to Google Sheets (Routines tab)
+  async syncRoutines(routines, settings) {
+    if (!settings || !settings.sheetUrl) {
+      throw new Error("Google Sheets Web App URL is not configured in Settings.");
+    }
+    const payload = {
+      token: settings.apiToken || "",
+      type: "routines",
+      routines: routines.map(rt => ({ id: rt.id, name: rt.name, exercises: rt.exercises }))
+    };
+    try {
+      const response = await fetch(settings.sheetUrl, {
+        method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const result = await response.json();
+      return result.status === "success" ? { success: true } : { success: false, error: result.message };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Fetch all routines from Google Sheets
+  async fetchRoutines(sheetUrl, apiToken) {
+    if (!sheetUrl) {
+      return { success: false, error: "URL is required" };
+    }
+
+    try {
+      const separator = sheetUrl.includes('?') ? '&' : '?';
+      const url = apiToken
+        ? `${sheetUrl}${separator}token=${encodeURIComponent(apiToken)}&type=routines`
+        : `${sheetUrl}${separator}type=routines`;
+
+      const response = await fetch(url, {
+        method: "GET",
+        mode: "cors"
+      });
+
+      if (!response.ok) {
+        return { success: false, error: `Server returned status ${response.status}` };
+      }
+
+      const result = await response.json();
+      return result.status === "success" ? { success: true, routines: result.routines || [] } : { success: false, error: result.message };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
   // Fetch all workout history from Google Sheets
   async fetchHistory(sheetUrl, apiToken) {
     if (!sheetUrl) {

@@ -136,6 +136,15 @@ function initApp() {
     if (migrated) {
       localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
     }
+    // Sync routines to Google Sheets on init if available
+    if (state.settings.sheetUrl) {
+      (async () => {
+        const res = await SheetsSyncService.syncRoutines(state.routines, state.settings);
+        if (!res.success) {
+          console.warn('Routines sync failed:', res.error);
+        }
+      })();
+    }
   } else {
     state.routines = [...DEFAULT_ROUTINES];
     localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
@@ -369,6 +378,15 @@ function renderRoutines() {
       if (confirm(`Are you sure you want to delete the routine "${routine.name}"?`)) {
         state.routines = state.routines.filter(r => r.id !== routine.id);
         localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
+        // Sync routines after deletion
+        if (state.settings.sheetUrl) {
+          (async () => {
+            const res = await SheetsSyncService.syncRoutines(state.routines, state.settings);
+            if (!res.success) {
+              console.warn('Routines sync failed:', res.error);
+            }
+          })();
+        }
         renderRoutines();
         renderDashboard();
       }
@@ -1146,6 +1164,16 @@ function saveRoutineFromModal() {
   }
   
   localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
+  
+  // Sync routines to Google Sheets
+  if (state.settings.sheetUrl) {
+    (async () => {
+      const res = await SheetsSyncService.syncRoutines(state.routines, state.settings);
+      if (!res.success) {
+        console.warn('Routines sync failed:', res.error);
+      }
+    })();
+  }
   
   // Close and refresh
   document.getElementById('routine-modal-overlay').classList.remove('active');

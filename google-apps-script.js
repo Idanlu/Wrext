@@ -45,7 +45,55 @@ function doPost(e) {
       sheet = ss.getSheets()[0];
     }
     
-    // 3. Append rows
+    // 3. Handle Routines sync (full array)
+    if (data.routines && Array.isArray(data.routines)) {
+      var routineSheet = ss.getSheetByName("Routines");
+      if (!routineSheet) {
+        routineSheet = ss.insertSheet("Routines");
+      }
+      // Clear existing content and set header
+      routineSheet.clearContents();
+      routineSheet.appendRow(["ID", "Name", "ExercisesJSON"]);
+      data.routines.forEach(function(rt) {
+        routineSheet.appendRow([
+          rt.id || "",
+          rt.name || "",
+          JSON.stringify(rt.exercises || [])
+        ]);
+      });
+      // Continue to possibly handle workout sets if also provided
+    }
+    // 4. Legacy single routine entry
+    if (data.type === "routine") {
+      var routineSheet = ss.getSheetByName("Routines");
+      if (!routineSheet) {
+        routineSheet = ss.insertSheet("Routines");
+        routineSheet.appendRow(["ID", "Name", "ExercisesJSON"]);
+      }
+      routineSheet.appendRow([
+        data.id || "",
+        data.name || "",
+        JSON.stringify(data.exercises || [])
+      ]);
+    }
+    
+        // 2. Handle GET for history or routines
+    if (e && e.parameter && e.parameter.type === "routine") {
+      var routineSheet = ss.getSheetByName("Routines");
+      if (!routineSheet) {
+        return makeResponse("success", "No routines sheet.", { routines: [] });
+      }
+      var lastRow = routineSheet.getLastRow();
+      if (lastRow < 2) {
+        return makeResponse("success", "No routines data.", { routines: [] });
+      }
+      var dataRange = routineSheet.getRange(2, 1, lastRow - 1, 2); // name, exercises
+      var values = dataRange.getValues();
+      var routines = values.map(function(row) {
+        return { name: row[0] || "", exercises: JSON.parse(row[1] || "[]") };
+      });
+      return makeResponse("success", "Fetched routines.", { routines: routines });
+    }
     var rowsAdded = 0;
     if (data.sets && Array.isArray(data.sets)) {
       data.sets.forEach(function(item) {
