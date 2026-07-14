@@ -166,11 +166,28 @@ function initApp() {
   window.addEventListener('online', updateConnectionStatus);
   window.addEventListener('offline', updateConnectionStatus);
   
-  // 5. Initial views rendering
-  renderDashboard();
-  renderRoutines();
-  renderHistory();
-  loadSettingsForm();
+// 5. Initial views rendering
+renderDashboard();
+renderRoutines();
+renderHistory();
+loadSettingsForm();
+
+// Auto-sync history from Google Sheet (authoritative DB)
+(async () => {
+  if (state.settings.sheetUrl) {
+    const result = await SheetsSyncService.fetchHistory(state.settings.sheetUrl, state.settings.apiToken);
+    if (result.success && result.workouts) {
+      // Replace local history with sheet data, mark as synced
+      state.history = result.workouts.map(w => ({ ...w, synced: true }));
+      localStorage.setItem('wrext_history', JSON.stringify(state.history));
+      renderDashboard();
+      renderHistory();
+      showToast('History synced from Google Sheet.', true);
+    } else {
+      console.warn('Auto-sync failed:', result.error);
+    }
+  }
+})();
   
   // Check if active session was saved (crash prevention)
   const savedSession = localStorage.getItem('wrext_active_session');
