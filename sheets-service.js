@@ -17,7 +17,9 @@ const SheetsSyncService = {
       return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
     };
 
-    const weekNumber = workout.date ? getWeekNumber(workout.date) : "";
+    const weekNumber = workout.weekNumber !== undefined && workout.weekNumber !== ""
+      ? String(workout.weekNumber)
+      : (workout.date ? getWeekNumber(workout.date) : "");
 
     // Format payload matching google-apps-script.js structure
     // We log each exercise as a row in the spreadsheet.
@@ -120,7 +122,12 @@ const SheetsSyncService = {
     const payload = {
       token: settings.apiToken || "",
       type: "routines",
-      routines: routines.map(rt => ({ id: rt.id, name: rt.name, exercises: rt.exercises }))
+      routines: routines.map(rt => ({
+        id: rt.id,
+        name: rt.name,
+        dayType: rt.dayType || "",
+        exercises: rt.exercises
+      }))
     };
     try {
       const response = await fetch(settings.sheetUrl, {
@@ -208,13 +215,14 @@ const SheetsSyncService = {
       // Skip rows with no exercise name
       if (!row.name) return;
 
-      // Create a unique key from Date + Day Type
-      const key = `${row.date}|||${row.dayType}`;
+      // Create a unique key from Date + Day Type + WeekNumber
+      const key = `${row.date}|||${row.dayType}|||${row.weekNumber}`;
 
       if (!groups[key]) {
         groups[key] = {
           date: String(row.date),
           dayType: String(row.dayType),
+          weekNumber: row.weekNumber !== undefined && row.weekNumber !== null ? String(row.weekNumber) : "",
           exercises: []
         };
       }
@@ -238,6 +246,7 @@ const SheetsSyncService = {
       name: `${group.dayType} Day`,
       dayType: group.dayType,
       date: group.date,
+      weekNumber: group.weekNumber,
       duration: "",
       exercises: group.exercises,
       synced: true // Already in the sheet

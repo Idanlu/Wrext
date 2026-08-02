@@ -37,68 +37,38 @@ function doPost(e) {
       return makeResponse("error", "Unauthorized: API Token mismatch.");
     }
     
-    // 2. Open spreadsheet and target sheet
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName("Sheet1");
-    if (!sheet) {
-      // Fallback to first sheet if Sheet1 doesn't exist
-      sheet = ss.getSheets()[0];
-    }
-    
-    // 3. Handle Routines sync (full array)
-    if (data.routines && Array.isArray(data.routines)) {
+    // 2. Handle Routines Sync (full array)
+    if (data.type === "routines" || (data.routines && Array.isArray(data.routines))) {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
       var routineSheet = ss.getSheetByName("Routines");
       if (!routineSheet) {
         routineSheet = ss.insertSheet("Routines");
       }
-      // Clear existing content and set header
       routineSheet.clearContents();
-      routineSheet.appendRow(["ID", "Name", "ExercisesJSON"]);
-      data.routines.forEach(function(rt) {
+      routineSheet.appendRow(["ID", "Name", "DayType", "ExercisesJSON"]);
+      var routineList = data.routines || [];
+      routineList.forEach(function(rt) {
         routineSheet.appendRow([
           rt.id || "",
           rt.name || "",
+          rt.dayType || "",
           JSON.stringify(rt.exercises || [])
         ]);
       });
-      // Continue to possibly handle workout sets if also provided
-    }
-    // 4. Legacy single routine entry
-    if (data.type === "routine") {
-      var routineSheet = ss.getSheetByName("Routines");
-      if (!routineSheet) {
-        routineSheet = ss.insertSheet("Routines");
-        routineSheet.appendRow(["ID", "Name", "ExercisesJSON"]);
-      }
-      routineSheet.appendRow([
-        data.id || "",
-        data.name || "",
-        JSON.stringify(data.exercises || [])
-      ]);
+      return makeResponse("success", "Synced " + routineList.length + " routines.");
     }
     
-        // 2. Handle GET for history or routines
-    if (e && e.parameter && e.parameter.type === "routine") {
-      var routineSheet = ss.getSheetByName("Routines");
-      if (!routineSheet) {
-        return makeResponse("success", "No routines sheet.", { routines: [] });
-      }
-      var lastRow = routineSheet.getLastRow();
-      if (lastRow < 2) {
-        return makeResponse("success", "No routines data.", { routines: [] });
-      }
-      var dataRange = routineSheet.getRange(2, 1, lastRow - 1, 2); // name, exercises
-      var values = dataRange.getValues();
-      var routines = values.map(function(row) {
-        return { name: row[0] || "", exercises: JSON.parse(row[1] || "[]") };
-      });
-      return makeResponse("success", "Fetched routines.", { routines: routines });
+    // 3. Open spreadsheet and target sheet for workouts
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Sheet1");
+    if (!sheet) {
+      sheet = ss.getSheets()[0];
     }
+    
+    // 4. Append workout rows
     var rowsAdded = 0;
     if (data.sets && Array.isArray(data.sets)) {
       data.sets.forEach(function(item) {
-        // Expected item keys: date, dayType, order, name, weight, sets (array), supersetType, notes
-        // Note: The sheet has columns F, G, H, I for Set 1, Set 2, Set 3, Set 4.
         var setsArray = item.sets || [];
         var rowData = [
           item.date || "",
@@ -130,8 +100,8 @@ function doPost(e) {
 }
 
 /**
- * doGet - Read all workout rows from Sheet1 and return as JSON.
- * Called via GET request: WebAppURL?token=YOUR_TOKEN
+ * doGet - Read data from Sheet1 (history) or Routines tab and return as JSON.
+ * Called via GET request: WebAppURL?token=YOUR_TOKEN[&type=routines]
  */
 function doGet(e) {
   try {
@@ -142,8 +112,37 @@ function doGet(e) {
       return makeResponse("error", "Unauthorized: API Token mismatch.");
     }
     
-    // 2. Open spreadsheet and target sheet
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var requestType = (e && e.parameter && e.parameter.type) ? e.parameter.type : "";
+
+    // 2. Check if fetching Routines
+    if (requestType === "routines" || requestType === "routine") {
+      var routineSheet = ss.getSheetByName("Routines");
+      if (!routineSheet) {
+        return makeResponse("success", "No routines sheet.", { routines: [] });
+      }
+      var lastRow = routineSheet.getLastRow();
+      if (lastRow < 2) {
+        return makeResponse("success", "No routines data.", { routines: [] });
+      }
+      var dataRange = routineSheet.getRange(2, 1, lastRow - 1, 4); // ID, Name, DayType, ExercisesJSON
+      var values = dataRange.getValues();
+      var routines = values.map(function(row) {
+        var exercises = [];
+        try {
+          exercises = JSON.parse(row[3] || "[]");
+        } catch (err) {}
+        return {
+          id: String(row[0] || ""),
+          name: String(row[1] || ""),
+          dayType: String(row[2] || ""),
+          exercises: exercises
+        };
+      });
+      return makeResponse("success", "Fetched " + routines.length + " routines.", { routines: routines });
+    }
+    
+    // 3. Otherwise fetch Workout History from Sheet1
     var sheet = ss.getSheetByName("Sheet1");
     if (!sheet) {
       sheet = ss.getSheets()[0];
@@ -151,15 +150,13 @@ function doGet(e) {
     
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) {
-      // Only header row or empty sheet
       return makeResponse("success", "No data rows found.", { rows: [] });
     }
     
-    // 3. Read all data rows (skip header row 1)
     var dataRange = sheet.getRange(2, 1, lastRow - 1, 13); // Columns A-M
     var values = dataRange.getValues();
     
-    var rows = values.map(function(row, idx) {
+    var rows = values.map(function(row) {
       return {
         date: row[0] || "",
         dayType: row[1] || "",

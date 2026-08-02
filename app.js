@@ -85,27 +85,75 @@ function formatTime(seconds) {
   return `${h}:${m}:${s}`;
 }
 
-// Helper: Get formatted date string for inputs (e.g., "Mon (W1)") or calendar fallback
-function getDefaultWorkoutDate() {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function getISOWeek(dateObj) {
+  const d = new Date(Date.UTC(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function getAutoWeekNumber() {
   const now = new Date();
-  const dayName = days[now.getDay()];
   
-  // Calculate approximate week cycle if they have history
-  let weekNum = 1;
-  if (state.history.length > 0) {
-    // Basic auto-increment or keep it simple
+  if (state.history && state.history.length > 0) {
     const lastLog = state.history[0];
-    const match = lastLog.date.match(/W(\d+)/);
-    if (match) {
-      weekNum = parseInt(match[1]);
-      // If last log was Wed and today is Mon, maybe increment week
-      if (lastLog.date.includes('Wed') && dayName === 'Mon') {
-        weekNum += 1;
+    
+    // 1. If last log explicitly has weekNumber stored
+    if (lastLog.weekNumber && !isNaN(parseInt(lastLog.weekNumber))) {
+      let weekNum = parseInt(lastLog.weekNumber);
+      
+      // Check if last log date is in a previous ISO week
+      if (lastLog.date) {
+        const parsedLastDate = new Date(lastLog.date);
+        if (!isNaN(parsedLastDate.getTime())) {
+          const lastIsoWeek = getISOWeek(parsedLastDate);
+          const currentIsoWeek = getISOWeek(now);
+          if (currentIsoWeek > lastIsoWeek) {
+            weekNum += (currentIsoWeek - lastIsoWeek);
+          }
+        } else {
+          // If weekday string e.g. "Wed", check transition to "Mon"
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          const todayName = days[now.getDay()];
+          if (lastLog.date.includes('Wed') || lastLog.date.includes('Fri')) {
+            if (todayName === 'Mon') {
+              weekNum += 1;
+            }
+          }
+        }
+      }
+      return weekNum;
+    }
+    
+    // 2. Check if date field contained (W<N>)
+    if (lastLog.date) {
+      const match = lastLog.date.match(/W(\d+)/i);
+      if (match) {
+        let weekNum = parseInt(match[1]);
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const todayName = days[now.getDay()];
+        if (lastLog.date.includes('Wed') && todayName === 'Mon') {
+          weekNum += 1;
+        }
+        return weekNum;
       }
     }
   }
-  return `${dayName} (W${weekNum})`;
+  
+  return getISOWeek(now);
+}
+
+// Helper: Get formatted date string for inputs (e.g., "Mon, 03 Aug")
+function getDefaultWorkoutDate() {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const now = new Date();
+  const dayName = days[now.getDay()];
+  const monthName = months[now.getMonth()];
+  const dayOfMonth = String(now.getDate()).padStart(2, '0');
+  
+  return `${dayName}, ${dayOfMonth} ${monthName}`;
 }
 
 // ----------------------------------------------------
@@ -181,9 +229,22 @@ renderRoutines();
 renderHistory();
 loadSettingsForm();
 
-// Auto-sync history from Google Sheet (authoritative DB)
+// Auto-sync routines and history from Google Sheet (authoritative DB)
 (async () => {
   if (state.settings.sheetUrl) {
+    // 1. Sync routines from Google Sheet
+    const routinesResult = await SheetsSyncService.fetchRoutines(state.settings.sheetUrl, state.settings.apiToken);
+    if (routinesResult.success && routinesResult.routines && routinesResult.routines.length > 0) {
+      state.routines = routinesResult.routines;
+      localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
+      renderRoutines();
+      renderDashboard();
+    } else if (routinesResult.success && (!routinesResult.routines || routinesResult.routines.length === 0) && state.routines.length > 0) {
+      // Seed sheet with local routines if Routines tab is currently empty
+      await SheetsSyncService.syncRoutines(state.routines, state.settings);
+    }
+
+    // 2. Sync history from Google Sheet
     const result = await SheetsSyncService.fetchHistory(state.settings.sheetUrl, state.settings.apiToken);
     if (result.success && result.workouts) {
       // Replace local history with sheet data, mark as synced
@@ -191,7 +252,7 @@ loadSettingsForm();
       localStorage.setItem('wrext_history', JSON.stringify(state.history));
       renderDashboard();
       renderHistory();
-      showToast('History synced from Google Sheet.', true);
+      showToast('Routines & History synced from Google Sheet.', true);
     } else {
       console.warn('Auto-sync failed:', result.error);
     }
@@ -481,6 +542,7 @@ function startWorkoutSession(routine) {
     name: routine.name,
     dayType: routine.dayType || "Other",
     date: getDefaultWorkoutDate(),
+    weekNumber: getAutoWeekNumber(),
     checkCounter: 0, // Global counter for ordering checked sets
     exercises: routine.exercises.map(ex => {
       // Find previous history weights/reps for this exercise to prefill placeholders
@@ -519,7 +581,8 @@ function resumeWorkoutSession() {
   
   // Render Workout Title & Date
   document.getElementById('active-workout-name').textContent = state.activeSession.name;
-  document.getElementById('active-workout-date-input').value = state.activeSession.date;
+  document.getElementById('active-workout-date-input').value = state.activeSession.date || getDefaultWorkoutDate();
+  document.getElementById('active-workout-week-input').value = state.activeSession.weekNumber !== undefined ? state.activeSession.weekNumber : getAutoWeekNumber();
   
   renderActiveExercises();
   
@@ -714,8 +777,9 @@ function renderActiveExercises() {
 
 function saveActiveSessionLocal() {
   if (state.activeSession) {
-    // Read the date from the DOM input
+    // Read date and week number from DOM inputs
     state.activeSession.date = document.getElementById('active-workout-date-input').value;
+    state.activeSession.weekNumber = parseInt(document.getElementById('active-workout-week-input').value) || getAutoWeekNumber();
     localStorage.setItem('wrext_active_session', JSON.stringify(state.activeSession));
   }
 }
@@ -888,8 +952,9 @@ function computeSupersetTypes(exercises) {
 async function completeActiveWorkout() {
   if (!state.activeSession) return;
   
-  // Read date from form
+  // Read date and week number from form
   const finalDate = document.getElementById('active-workout-date-input').value;
+  const finalWeekNumber = parseInt(document.getElementById('active-workout-week-input').value) || getAutoWeekNumber();
   
   // Compute superset types dynamically based on set check order
   const supersetTypes = computeSupersetTypes(state.activeSession.exercises);
@@ -931,6 +996,7 @@ async function completeActiveWorkout() {
     name: state.activeSession.name,
     dayType: state.activeSession.dayType,
     date: finalDate,
+    weekNumber: finalWeekNumber,
     duration: formatTime(sessionSeconds),
     exercises: loggedExercises,
     synced: false

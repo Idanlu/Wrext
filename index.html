@@ -103,9 +103,15 @@
         </div>
       </div>
       
-      <div class="form-group" style="margin-bottom: 20px;">
-        <label class="form-label">Workout Date / Weekday</label>
-        <input type="text" id="active-workout-date-input" class="form-input" placeholder="e.g. Mon (W1)">
+      <div style="display: flex; gap: 12px; margin-bottom: 20px;">
+        <div style="flex: 2;">
+          <label class="form-label">Workout Date / Weekday</label>
+          <input type="text" id="active-workout-date-input" class="form-input" placeholder="e.g. Mon, 03 Aug">
+        </div>
+        <div style="flex: 1;">
+          <label class="form-label">Week #</label>
+          <input type="number" id="active-workout-week-input" class="form-input" min="1" max="53" placeholder="1">
+        </div>
       </div>
       
       <div class="active-exercises" id="active-exercises-list">
