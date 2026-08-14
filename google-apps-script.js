@@ -57,15 +57,54 @@ function doPost(e) {
       });
       return makeResponse("success", "Synced " + routineList.length + " routines.");
     }
+
+    // 3. Handle Programs Sync (full array)
+    if (data.type === "programs" || (data.programs && Array.isArray(data.programs))) {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var progSheet = ss.getSheetByName("Programs");
+      if (!progSheet) {
+        progSheet = ss.insertSheet("Programs");
+      }
+      progSheet.clearContents();
+      progSheet.appendRow(["Program ID", "Program Name", "Week", "Routine ID", "Routine Name", "Day Type", "Exercise Name", "Weight", "Sets", "Reps", "Rest (s)", "Notes", "Completed", "CompletedAt"]);
+      var programList = data.programs || [];
+      var totalRows = 0;
+      programList.forEach(function(prog) {
+        var routines = prog.routines || [];
+        routines.forEach(function(rt) {
+          var exercises = rt.exercises || [];
+          exercises.forEach(function(ex) {
+            progSheet.appendRow([
+              prog.id || "",
+              prog.name || "",
+              rt.weekNumber !== undefined ? rt.weekNumber : 1,
+              rt.id || "",
+              rt.name || "",
+              rt.dayType || "",
+              ex.name || "",
+              ex.weight || 0,
+              ex.setsCount !== undefined ? ex.setsCount : (ex.sets || 3),
+              ex.reps !== undefined ? String(ex.reps) : "8",
+              ex.restTime !== undefined ? ex.restTime : 90,
+              ex.notes || "",
+              rt.completed ? "TRUE" : "FALSE",
+              rt.completedAt || ""
+            ]);
+            totalRows++;
+          });
+        });
+      });
+      return makeResponse("success", "Synced " + programList.length + " programs (" + totalRows + " rows).");
+    }
     
-    // 3. Open spreadsheet and target sheet for workouts
+    // 4. Open spreadsheet and target sheet for workouts
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName("Sheet1");
     if (!sheet) {
       sheet = ss.getSheets()[0];
     }
     
-    // 4. Append workout rows
+    // 5. Append workout rows
     var rowsAdded = 0;
     if (data.sets && Array.isArray(data.sets)) {
       data.sets.forEach(function(item) {
@@ -100,8 +139,8 @@ function doPost(e) {
 }
 
 /**
- * doGet - Read data from Sheet1 (history) or Routines tab and return as JSON.
- * Called via GET request: WebAppURL?token=YOUR_TOKEN[&type=routines]
+ * doGet - Read data from Sheet1 (history), Routines, or Programs tab and return as JSON.
+ * Called via GET request: WebAppURL?token=YOUR_TOKEN[&type=routines|programs]
  */
 function doGet(e) {
   try {
@@ -140,6 +179,39 @@ function doGet(e) {
         };
       });
       return makeResponse("success", "Fetched " + routines.length + " routines.", { routines: routines });
+    }
+
+    // 3. Check if fetching Programs
+    if (requestType === "programs" || requestType === "program") {
+      var progSheet = ss.getSheetByName("Programs");
+      if (!progSheet) {
+        return makeResponse("success", "No programs sheet.", { rows: [] });
+      }
+      var lastRow = progSheet.getLastRow();
+      if (lastRow < 2) {
+        return makeResponse("success", "No programs data.", { rows: [] });
+      }
+      var dataRange = progSheet.getRange(2, 1, lastRow - 1, 14); // 14 columns
+      var values = dataRange.getValues();
+      var rows = values.map(function(row) {
+        return {
+          programId: String(row[0] || ""),
+          programName: String(row[1] || ""),
+          weekNumber: row[2] !== "" ? parseInt(row[2]) : 1,
+          routineId: String(row[3] || ""),
+          routineName: String(row[4] || ""),
+          dayType: String(row[5] || ""),
+          exerciseName: String(row[6] || ""),
+          weight: row[7] !== "" ? parseFloat(row[7]) : 0,
+          sets: row[8] !== "" ? parseInt(row[8]) : 3,
+          reps: String(row[9] !== undefined ? row[9] : "8"),
+          restTime: row[10] !== "" ? parseInt(row[10]) : 90,
+          notes: String(row[11] || ""),
+          completed: String(row[12]).toUpperCase() === "TRUE" || row[12] === true,
+          completedAt: String(row[13] || "")
+        };
+      });
+      return makeResponse("success", "Fetched " + rows.length + " program rows.", { rows: rows });
     }
     
     // 3. Otherwise fetch Workout History from Sheet1

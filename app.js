@@ -11,6 +11,9 @@ let state = {
     soundEnabled: true
   },
   routines: [],
+  programs: [],
+  activeProgramId: null,
+  programWeekFilter: "ALL",
   history: [],
   activeSession: null, // Holds active workout session data
   streak: 0,
@@ -51,6 +54,52 @@ function playTimerDoneChime() {
     console.error("Audio playback error:", err);
   }
 }
+
+// Default program for demonstration and initial state
+const DEFAULT_PROGRAM = {
+  id: "prog-calisthenics-mastery",
+  name: "4-Week Calisthenics Mastery",
+  routines: [
+    {
+      id: "rt-w1-d1",
+      weekNumber: 1,
+      name: "Week 1 Day 1 - Heavy Upper",
+      dayType: "Heavy",
+      completed: false,
+      completedAt: null,
+      exercises: [
+        { name: "Weighted Pull-up", weight: 20, setsCount: 3, reps: "8", restTime: 120, notes: "Chest to bar" },
+        { name: "Deep Push-ups", weight: 0, setsCount: 3, reps: "12", restTime: 90, notes: "Full ROM" },
+        { name: "Hanging Knee Raises", weight: 0, setsCount: 3, reps: "15", restTime: 60, notes: "Controlled negative" }
+      ]
+    },
+    {
+      id: "rt-w1-d2",
+      weekNumber: 1,
+      name: "Week 1 Day 2 - Lower & Core",
+      dayType: "Volume",
+      completed: false,
+      completedAt: null,
+      exercises: [
+        { name: "Cossack Squats", weight: 8, setsCount: 4, reps: "10", restTime: 90, notes: "Deep stretch" },
+        { name: "Active Hang", weight: 0, setsCount: 3, reps: "45", restTime: 60, notes: "Scapular depression" }
+      ]
+    },
+    {
+      id: "rt-w2-d1",
+      weekNumber: 2,
+      name: "Week 2 Day 1 - Heavy Upper Overload",
+      dayType: "Heavy",
+      completed: false,
+      completedAt: null,
+      exercises: [
+        { name: "Weighted Pull-up", weight: 22.5, setsCount: 3, reps: "8", restTime: 120, notes: "+2.5kg overload" },
+        { name: "Deep Push-ups", weight: 5, setsCount: 3, reps: "10", restTime: 90, notes: "Weighted" },
+        { name: "Hanging Knee Raises", weight: 0, setsCount: 3, reps: "15", restTime: 60, notes: "Strict execution" }
+      ]
+    }
+  ]
+};
 
 // Default routines based on the user's spreadsheet logs
 const DEFAULT_ROUTINES = [
@@ -197,6 +246,20 @@ function initApp() {
     state.routines = [...DEFAULT_ROUTINES];
     localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
   }
+
+  const savedPrograms = localStorage.getItem('wrext_programs');
+  if (savedPrograms) {
+    try {
+      state.programs = JSON.parse(savedPrograms);
+    } catch (e) {
+      state.programs = [DEFAULT_PROGRAM];
+    }
+  } else {
+    state.programs = [DEFAULT_PROGRAM];
+    localStorage.setItem('wrext_programs', JSON.stringify(state.programs));
+  }
+
+  state.activeProgramId = localStorage.getItem('wrext_active_program_id') || (state.programs[0] ? state.programs[0].id : null);
   
   const savedHistory = localStorage.getItem('wrext_history');
   if (savedHistory) {
@@ -223,48 +286,73 @@ function initApp() {
   window.addEventListener('online', updateConnectionStatus);
   window.addEventListener('offline', updateConnectionStatus);
   
-// 5. Initial views rendering
-renderDashboard();
-renderRoutines();
-renderHistory();
-loadSettingsForm();
+  // 5. Initial views rendering
+  renderDashboard();
+  renderRoutines();
+  renderPrograms();
+  renderHistory();
+  loadSettingsForm();
 
-// Auto-sync routines and history from Google Sheet (authoritative DB)
-(async () => {
-  if (state.settings.sheetUrl) {
-    // 1. Sync routines from Google Sheet
-    const routinesResult = await SheetsSyncService.fetchRoutines(state.settings.sheetUrl, state.settings.apiToken);
-    if (routinesResult.success && routinesResult.routines && routinesResult.routines.length > 0) {
-      state.routines = routinesResult.routines;
-      localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
-      renderRoutines();
-      renderDashboard();
-    } else if (routinesResult.success && (!routinesResult.routines || routinesResult.routines.length === 0) && state.routines.length > 0) {
-      // Seed sheet with local routines if Routines tab is currently empty
-      await SheetsSyncService.syncRoutines(state.routines, state.settings);
-    }
+  // Auto-sync routines, programs, and history from Google Sheet (authoritative DB)
+  (async () => {
+    if (state.settings.sheetUrl) {
+      // 1. Sync routines from Google Sheet
+      const routinesResult = await SheetsSyncService.fetchRoutines(state.settings.sheetUrl, state.settings.apiToken);
+      if (routinesResult.success && routinesResult.routines && routinesResult.routines.length > 0) {
+        state.routines = routinesResult.routines;
+        localStorage.setItem('wrext_routines', JSON.stringify(state.routines));
+        renderRoutines();
+        renderDashboard();
+      } else if (routinesResult.success && (!routinesResult.routines || routinesResult.routines.length === 0) && state.routines.length > 0) {
+        await SheetsSyncService.syncRoutines(state.routines, state.settings);
+      }
 
-    // 2. Sync history from Google Sheet
-    const result = await SheetsSyncService.fetchHistory(state.settings.sheetUrl, state.settings.apiToken);
-    if (result.success && result.workouts) {
-      // Replace local history with sheet data, mark as synced
-      state.history = result.workouts.map(w => ({ ...w, synced: true }));
-      localStorage.setItem('wrext_history', JSON.stringify(state.history));
-      renderDashboard();
-      renderHistory();
-      showToast('Routines & History synced from Google Sheet.', true);
-    } else {
-      console.warn('Auto-sync failed:', result.error);
+      // 2. Sync programs from Google Sheet
+      const programsResult = await SheetsSyncService.fetchPrograms(state.settings.sheetUrl, state.settings.apiToken);
+      if (programsResult.success && programsResult.programs && programsResult.programs.length > 0) {
+        // Merge completed statuses if local program completed routine exists
+        programsResult.programs.forEach(fetchedProg => {
+          const localProg = state.programs.find(p => p.id === fetchedProg.id || p.name === fetchedProg.name);
+          if (localProg) {
+            fetchedProg.routines.forEach(fRt => {
+              const lRt = localProg.routines.find(r => r.id === fRt.id || r.name === fRt.name);
+              if (lRt && lRt.completed) {
+                fRt.completed = true;
+                fRt.completedAt = lRt.completedAt;
+              }
+            });
+          }
+        });
+        state.programs = programsResult.programs;
+        if (!state.activeProgramId && state.programs[0]) {
+          state.activeProgramId = state.programs[0].id;
+        }
+        localStorage.setItem('wrext_programs', JSON.stringify(state.programs));
+        renderPrograms();
+        renderDashboard();
+      } else if (programsResult.success && (!programsResult.programs || programsResult.programs.length === 0) && state.programs.length > 0) {
+        await SheetsSyncService.syncPrograms(state.programs, state.settings);
+      }
+
+      // 3. Sync history from Google Sheet
+      const result = await SheetsSyncService.fetchHistory(state.settings.sheetUrl, state.settings.apiToken);
+      if (result.success && result.workouts) {
+        state.history = result.workouts.map(w => ({ ...w, synced: true }));
+        localStorage.setItem('wrext_history', JSON.stringify(state.history));
+        renderDashboard();
+        renderHistory();
+        showToast('Sheet auto-sync complete.', true);
+      } else {
+        console.warn('Auto-sync failed:', result.error);
+      }
     }
-  }
-})();
+  })();
   
   // Check if active session was saved (crash prevention)
   const savedSession = localStorage.getItem('wrext_active_session');
   if (savedSession) {
     if (confirm("You have an unsaved active workout session. Would you like to resume?")) {
       state.activeSession = JSON.parse(savedSession);
-      // Migration: clean up legacy supersetType from active session exercises
       if (state.activeSession.exercises) {
         state.activeSession.exercises.forEach(ex => {
           if (ex.hasOwnProperty('supersetType')) {
@@ -281,7 +369,6 @@ loadSettingsForm();
 
 // Switch SPA tab views
 function switchView(viewId) {
-  // If a session is active and user navigates away, allow it but keep warning
   document.querySelectorAll('.page-view').forEach(view => {
     view.classList.remove('active');
   });
@@ -300,6 +387,8 @@ function switchView(viewId) {
   // Custom actions on switching view
   if (viewId === 'view-dashboard') {
     renderDashboard();
+  } else if (viewId === 'view-programs') {
+    renderPrograms();
   } else if (viewId === 'view-history') {
     renderHistory();
   }
@@ -326,7 +415,361 @@ function updateConnectionStatus() {
 // UI Renderers
 // ----------------------------------------------------
 
+function parseProgramCSV(csvText) {
+  if (!csvText || !csvText.trim()) return [];
+  
+  const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) return [];
+  
+  function splitCSVLine(line) {
+    const delimiter = line.includes('\t') ? '\t' : ',';
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === delimiter && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  const rawRows = lines.map(splitCSVLine);
+
+  let startIndex = 0;
+  if (rawRows.length > 0) {
+    const firstRowStr = rawRows[0].join(' ').toLowerCase();
+    if (firstRowStr.includes('program') || firstRowStr.includes('exercise') || firstRowStr.includes('routine') || firstRowStr.includes('week')) {
+      startIndex = 1;
+    }
+  }
+
+  const programMap = {};
+
+  for (let i = startIndex; i < rawRows.length; i++) {
+    const row = rawRows[i];
+    if (row.length < 3) continue;
+
+    const progName = row[0] || "Imported Program";
+    const weekNum = parseInt(row[1]) || 1;
+    const routineName = row[2] || `Week ${weekNum} Routine`;
+    const dayType = row[3] || "Heavy";
+    const exName = row[4] || "";
+    const weight = parseFloat(row[5]) || 0;
+    const setsCount = parseInt(row[6]) || 3;
+    const reps = String(row[7] !== undefined ? row[7] : "8");
+    const restTime = parseInt(row[8]) !== undefined && row[8] !== "" ? parseInt(row[8]) : 90;
+    const notes = row[9] || "";
+
+    if (!exName) continue;
+
+    const pId = 'prog-' + progName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    if (!programMap[pId]) {
+      programMap[pId] = {
+        id: pId,
+        name: progName,
+        routinesMap: {}
+      };
+    }
+
+    const rId = `rt-${pId}-w${weekNum}-${routineName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+    if (!programMap[pId].routinesMap[rId]) {
+      programMap[pId].routinesMap[rId] = {
+        id: rId,
+        weekNumber: weekNum,
+        name: routineName,
+        dayType: dayType,
+        completed: false,
+        completedAt: null,
+        exercises: []
+      };
+    }
+
+    programMap[pId].routinesMap[rId].exercises.push({
+      name: exName,
+      weight: weight,
+      setsCount: setsCount,
+      reps: reps,
+      restTime: restTime,
+      notes: notes
+    });
+  }
+
+  return Object.values(programMap).map(p => ({
+    id: p.id,
+    name: p.name,
+    routines: Object.values(p.routinesMap)
+  }));
+}
+
+function startProgramRoutine(programId, routineId) {
+  const program = state.programs.find(p => p.id === programId);
+  if (!program) return;
+  const routine = program.routines.find(r => r.id === routineId);
+  if (!routine) return;
+
+  if (state.activeSession) {
+    if (!confirm("Starting a new session will discard your current active workout. Proceed?")) {
+      return;
+    }
+    cancelActiveWorkout();
+  }
+
+  state.activeSession = {
+    programId: program.id,
+    routineId: routine.id,
+    routineName: routine.name,
+    name: routine.name,
+    dayType: routine.dayType || "Heavy",
+    date: getDefaultWorkoutDate(),
+    weekNumber: routine.weekNumber !== undefined ? routine.weekNumber : getAutoWeekNumber(),
+    checkCounter: 0,
+    exercises: routine.exercises.map(ex => {
+      const setsCount = ex.setsCount || 3;
+      const repParts = String(ex.reps || "8").split(',').map(s => s.trim());
+      const sets = [];
+      const checkedSets = [];
+      const completionOrders = [];
+
+      for (let i = 0; i < setsCount; i++) {
+        sets.push(repParts[i] !== undefined ? repParts[i] : (repParts[0] || "8"));
+        checkedSets.push(false);
+        completionOrders.push(null);
+      }
+
+      return {
+        name: ex.name,
+        weight: parseFloat(ex.weight) || 0,
+        sets: sets,
+        checked: checkedSets,
+        completionOrders: completionOrders,
+        prevSets: repParts,
+        prevWeight: ex.weight,
+        restTime: ex.restTime !== undefined ? ex.restTime : (parseInt(state.settings.restDuration) || 90),
+        notes: ex.notes || ""
+      };
+    })
+  };
+
+  sessionSeconds = 0;
+  resumeWorkoutSession();
+}
+
+function renderPrograms() {
+  const cardContainer = document.getElementById('active-program-card-container');
+  const routinesList = document.getElementById('program-routines-list');
+  const weekFilterBar = document.getElementById('week-filter-container');
+  
+  if (!cardContainer || !routinesList) return;
+
+  if (state.programs.length === 0) {
+    cardContainer.innerHTML = `
+      <div class="program-overview-card" style="text-align: center; padding: 24px;">
+        <h3 style="margin-bottom: 8px; color: #fff;">No Active Program</h3>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+          Import a program CSV or pull your trainer's program from Google Sheets to get started.
+        </p>
+      </div>
+    `;
+    routinesList.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 14px; padding: 30px 0;">No program routines available.</div>';
+    if (weekFilterBar) weekFilterBar.innerHTML = '';
+    return;
+  }
+
+  let activeProg = state.programs.find(p => p.id === state.activeProgramId);
+  if (!activeProg) {
+    activeProg = state.programs[0];
+    state.activeProgramId = activeProg.id;
+  }
+
+  const totalRoutines = activeProg.routines.length;
+  const completedRoutines = activeProg.routines.filter(r => r.completed).length;
+  const percent = totalRoutines > 0 ? Math.round((completedRoutines / totalRoutines) * 100) : 0;
+
+  let selectHTML = '';
+  if (state.programs.length > 1) {
+    selectHTML = `
+      <select id="program-select-dropdown" class="form-input" style="margin-top: 10px; font-size: 13px; padding: 6px 12px;">
+        ${state.programs.map(p => `<option value="${p.id}" ${p.id === activeProg.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+      </select>
+    `;
+  }
+
+  cardContainer.innerHTML = `
+    <div class="program-overview-card">
+      <div class="program-header-row">
+        <div>
+          <div class="program-title">${activeProg.name}</div>
+          <div class="program-meta">${totalRoutines} Routines • ${completedRoutines} Completed</div>
+        </div>
+        <span style="font-size: 22px; font-weight: 700; color: var(--primary);">${percent}%</span>
+      </div>
+      
+      <div class="program-progress-section">
+        <div class="program-progress-header">
+          <span>Overall Program Progress</span>
+          <span>${completedRoutines} / ${totalRoutines} Done</span>
+        </div>
+        <div class="program-progress-bar">
+          <div class="program-progress-fill" style="width: ${percent}%;"></div>
+        </div>
+      </div>
+      
+      ${selectHTML}
+    </div>
+  `;
+
+  if (document.getElementById('program-select-dropdown')) {
+    document.getElementById('program-select-dropdown').addEventListener('change', (e) => {
+      state.activeProgramId = e.target.value;
+      localStorage.setItem('wrext_active_program_id', state.activeProgramId);
+      renderPrograms();
+      renderDashboard();
+    });
+  }
+
+  const weeks = [...new Set(activeProg.routines.map(r => r.weekNumber || 1))].sort((a, b) => a - b);
+  if (weekFilterBar) {
+    weekFilterBar.innerHTML = '';
+    const allChip = document.createElement('button');
+    allChip.className = `week-tab-chip ${state.programWeekFilter === 'ALL' ? 'active' : ''}`;
+    allChip.textContent = 'All Weeks';
+    allChip.addEventListener('click', () => {
+      state.programWeekFilter = 'ALL';
+      renderPrograms();
+    });
+    weekFilterBar.appendChild(allChip);
+
+    weeks.forEach(w => {
+      const chip = document.createElement('button');
+      chip.className = `week-tab-chip ${state.programWeekFilter == w ? 'active' : ''}`;
+      chip.textContent = `Week ${w}`;
+      chip.addEventListener('click', () => {
+        state.programWeekFilter = w;
+        renderPrograms();
+      });
+      weekFilterBar.appendChild(chip);
+    });
+  }
+
+  let routinesToDisplay = activeProg.routines;
+  if (state.programWeekFilter !== 'ALL') {
+    routinesToDisplay = activeProg.routines.filter(r => (r.weekNumber || 1) == state.programWeekFilter);
+  }
+
+  routinesList.innerHTML = '';
+  if (routinesToDisplay.length === 0) {
+    routinesList.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 14px; padding: 20px 0;">No routines found for this week.</div>';
+    return;
+  }
+
+  routinesToDisplay.forEach(rt => {
+    const card = document.createElement('div');
+    card.className = `program-routine-card ${rt.completed ? 'completed' : ''}`;
+    
+    const statusBadge = rt.completed
+      ? `<span class="program-routine-badge completed">✓ Completed ${rt.completedAt ? `(${rt.completedAt})` : ''}</span>`
+      : `<span class="program-routine-badge pending">Pending</span>`;
+
+    const actionButton = rt.completed
+      ? `<button class="btn btn-secondary btn-start-program-rt" data-prog-id="${activeProg.id}" data-rt-id="${rt.id}" style="font-size: 13px; padding: 10px;">Restart Routine</button>`
+      : `<button class="btn btn-primary btn-start-program-rt" data-prog-id="${activeProg.id}" data-rt-id="${rt.id}" style="font-size: 13px; padding: 12px;">Start Routine</button>`;
+
+    card.innerHTML = `
+      <div class="program-routine-header">
+        <div>
+          <span class="program-routine-week">Week ${rt.weekNumber || 1}</span>
+          <div class="program-routine-title">${rt.name}</div>
+        </div>
+        ${statusBadge}
+      </div>
+
+      <div class="program-exercise-list">
+        ${(rt.exercises || []).map(ex => `
+          <div class="program-exercise-item">
+            <span class="program-exercise-name">${ex.name}</span>
+            <span class="program-exercise-spec">${ex.weight > 0 ? `${ex.weight}kg • ` : ''}${ex.setsCount || (ex.sets ? ex.sets.length : 3)} × ${ex.reps || 8}</span>
+          </div>
+        `).join('')}
+      </div>
+
+      ${actionButton}
+    `;
+
+    card.querySelector('.btn-start-program-rt').addEventListener('click', () => {
+      startProgramRoutine(activeProg.id, rt.id);
+    });
+
+    routinesList.appendChild(card);
+  });
+}
+
+function renderDashboardProgram() {
+  const container = document.getElementById('dashboard-program-container');
+  if (!container) return;
+
+  if (state.programs.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const activeProg = state.programs.find(p => p.id === state.activeProgramId) || state.programs[0];
+  if (!activeProg) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const total = activeProg.routines.length;
+  const completed = activeProg.routines.filter(r => r.completed).length;
+  const nextRoutine = activeProg.routines.find(r => !r.completed) || activeProg.routines[0];
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  container.innerHTML = `
+    <div class="card" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(0, 240, 255, 0.1)); border-color: rgba(0, 240, 255, 0.25); margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+        <div>
+          <span style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px;">Active Program</span>
+          <div style="font-size: 16px; font-weight: 700; color: #fff; margin-top: 2px;">${activeProg.name}</div>
+        </div>
+        <span style="font-size: 13px; font-weight: 700; color: var(--primary);">${completed}/${total} (${percent}%)</span>
+      </div>
+
+      <div class="program-progress-bar" style="margin-bottom: 14px;">
+        <div class="program-progress-fill" style="width: ${percent}%;"></div>
+      </div>
+
+      ${nextRoutine ? `
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 10px 12px; border-radius: 8px;">
+          <div>
+            <div style="font-size: 11px; color: var(--text-muted);">Next Scheduled Routine</div>
+            <div style="font-size: 13px; font-weight: 600; color: #fff;">${nextRoutine.name}</div>
+          </div>
+          <button class="btn btn-primary" id="btn-dashboard-start-program-rt" style="width: auto; padding: 8px 14px; font-size: 12px;">
+            Start
+          </button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  if (nextRoutine && document.getElementById('btn-dashboard-start-program-rt')) {
+    document.getElementById('btn-dashboard-start-program-rt').addEventListener('click', () => {
+      startProgramRoutine(activeProg.id, nextRoutine.id);
+    });
+  }
+}
+
 function renderDashboard() {
+  // Render Active Program Card
+  renderDashboardProgram();
+
   // Render Streak
   document.getElementById('streak-days').textContent = state.streak;
   
@@ -1008,6 +1451,28 @@ async function completeActiveWorkout() {
   // Append to history
   state.history.unshift(workoutLog);
   localStorage.setItem('wrext_history', JSON.stringify(state.history));
+
+  // If this workout session belonged to a Program, mark routine completed in Program
+  if (state.activeSession.programId && state.activeSession.routineId) {
+    const prog = state.programs.find(p => p.id === state.activeSession.programId);
+    if (prog) {
+      const rt = prog.routines.find(r => r.id === state.activeSession.routineId);
+      if (rt) {
+        rt.completed = true;
+        rt.completedAt = finalDate;
+        localStorage.setItem('wrext_programs', JSON.stringify(state.programs));
+        
+        if (state.settings.sheetUrl) {
+          (async () => {
+            const progSync = await SheetsSyncService.syncPrograms(state.programs, state.settings);
+            if (!progSync.success) {
+              console.warn("Failed to sync program completion to sheet:", progSync.error);
+            }
+          })();
+        }
+      }
+    }
+  }
   
   // Clear Active Session
   state.activeSession = null;
@@ -1032,6 +1497,7 @@ async function completeActiveWorkout() {
   }
   
   renderDashboard();
+  renderPrograms();
   renderHistory();
 }
 
@@ -1437,6 +1903,135 @@ function setupEventListeners() {
   document.getElementById('btn-create-routine').addEventListener('click', () => {
     openRoutineModal();
   });
+
+  // CSV Import Modal & Programs Triggers
+  const updateCSVPreview = () => {
+    const text = document.getElementById('csv-text-input').value;
+    const previewContainer = document.getElementById('csv-preview-container');
+    if (!previewContainer) return;
+    
+    const parsed = parseProgramCSV(text);
+    if (parsed.length > 0) {
+      previewContainer.style.display = 'block';
+      let totalRoutines = 0;
+      let totalExercises = 0;
+      parsed.forEach(p => {
+        totalRoutines += p.routines.length;
+        p.routines.forEach(r => { totalExercises += r.exercises.length; });
+      });
+      previewContainer.innerHTML = `
+        <div style="font-weight: 600; color: #fff; margin-bottom: 4px;">CSV Preview: ${parsed[0].name}</div>
+        <div class="csv-preview-stat">Programs: <strong>${parsed.length}</strong></div>
+        <div class="csv-preview-stat">Routines: <strong>${totalRoutines}</strong></div>
+        <div class="csv-preview-stat">Exercises: <strong>${totalExercises}</strong></div>
+      `;
+    } else {
+      previewContainer.style.display = 'none';
+    }
+  };
+
+  if (document.getElementById('btn-import-csv-modal')) {
+    document.getElementById('btn-import-csv-modal').addEventListener('click', () => {
+      document.getElementById('csv-modal-overlay').classList.add('active');
+      updateCSVPreview();
+    });
+  }
+
+  if (document.getElementById('btn-close-csv-modal')) {
+    document.getElementById('btn-close-csv-modal').addEventListener('click', () => {
+      document.getElementById('csv-modal-overlay').classList.remove('active');
+    });
+  }
+
+  if (document.getElementById('btn-cancel-csv-modal')) {
+    document.getElementById('btn-cancel-csv-modal').addEventListener('click', () => {
+      document.getElementById('csv-modal-overlay').classList.remove('active');
+    });
+  }
+
+  if (document.getElementById('csv-file-input')) {
+    document.getElementById('csv-file-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        document.getElementById('csv-text-input').value = event.target.result;
+        updateCSVPreview();
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  if (document.getElementById('csv-text-input')) {
+    document.getElementById('csv-text-input').addEventListener('input', updateCSVPreview);
+  }
+
+  if (document.getElementById('btn-save-imported-csv')) {
+    document.getElementById('btn-save-imported-csv').addEventListener('click', async () => {
+      const text = document.getElementById('csv-text-input').value;
+      const parsed = parseProgramCSV(text);
+
+      if (parsed.length === 0) {
+        alert("Unable to parse CSV. Please ensure the CSV contains rows with: Program Name, Week, Routine Name, Day Type, Exercise Name, Weight, Sets, Reps, Rest, Notes.");
+        return;
+      }
+
+      parsed.forEach(prog => {
+        const existingIdx = state.programs.findIndex(p => p.id === prog.id || p.name.toLowerCase() === prog.name.toLowerCase());
+        if (existingIdx >= 0) {
+          state.programs[existingIdx] = prog;
+        } else {
+          state.programs.push(prog);
+        }
+      });
+
+      state.activeProgramId = parsed[0].id;
+      localStorage.setItem('wrext_programs', JSON.stringify(state.programs));
+      localStorage.setItem('wrext_active_program_id', state.activeProgramId);
+
+      document.getElementById('csv-modal-overlay').classList.remove('active');
+      showToast(`Imported ${parsed.length} program(s) successfully!`);
+
+      if (state.settings.sheetUrl) {
+        showToast("Syncing imported programs to Google Sheet...", true);
+        const syncRes = await SheetsSyncService.syncPrograms(state.programs, state.settings);
+        if (syncRes.success) {
+          showToast("Programs synced to Google Sheet Programs tab! 👍");
+        } else {
+          showToast("Saved locally (Sheet sync failed). ⚠️");
+        }
+      }
+
+      renderPrograms();
+      renderDashboard();
+    });
+  }
+
+  if (document.getElementById('btn-pull-programs-sheet')) {
+    document.getElementById('btn-pull-programs-sheet').addEventListener('click', async () => {
+      if (!state.settings.sheetUrl) {
+        alert("Please configure your Google Sheets Web App URL in Settings first.");
+        return;
+      }
+
+      showToast("Pulling programs from Google Sheet...", true);
+      const res = await SheetsSyncService.fetchPrograms(state.settings.sheetUrl, state.settings.apiToken);
+
+      if (res.success && res.programs && res.programs.length > 0) {
+        state.programs = res.programs;
+        if (!state.activeProgramId && state.programs[0]) {
+          state.activeProgramId = state.programs[0].id;
+        }
+        localStorage.setItem('wrext_programs', JSON.stringify(state.programs));
+        renderPrograms();
+        renderDashboard();
+        showToast(`Successfully pulled ${state.programs.length} program(s) from sheet!`);
+      } else {
+        alert(res.error || "No programs found in Google Sheet Programs tab.");
+        showToast("Pull failed or no program rows found.");
+      }
+    });
+  }
   
   // Settings Form listeners
   document.getElementById('settings-sheet-url').addEventListener('change', (e) => {

@@ -144,8 +144,33 @@ const SheetsSyncService = {
     }
   },
 
-  // Fetch all routines from Google Sheets
-  async fetchRoutines(sheetUrl, apiToken) {
+  // Sync all programs to Google Sheets (Programs tab)
+  async syncPrograms(programs, settings) {
+    if (!settings || !settings.sheetUrl) {
+      throw new Error("Google Sheets Web App URL is not configured in Settings.");
+    }
+    const payload = {
+      token: settings.apiToken || "",
+      type: "programs",
+      programs: programs
+    };
+    try {
+      const response = await fetch(settings.sheetUrl, {
+        method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const result = await response.json();
+      return result.status === "success" ? { success: true, message: result.message } : { success: false, error: result.message };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Fetch all programs from Google Sheets
+  async fetchPrograms(sheetUrl, apiToken) {
     if (!sheetUrl) {
       return { success: false, error: "URL is required" };
     }
@@ -153,8 +178,8 @@ const SheetsSyncService = {
     try {
       const separator = sheetUrl.includes('?') ? '&' : '?';
       const url = apiToken
-        ? `${sheetUrl}${separator}token=${encodeURIComponent(apiToken)}&type=routines`
-        : `${sheetUrl}${separator}type=routines`;
+        ? `${sheetUrl}${separator}token=${encodeURIComponent(apiToken)}&type=programs`
+        : `${sheetUrl}${separator}type=programs`;
 
       const response = await fetch(url, {
         method: "GET",
@@ -166,10 +191,76 @@ const SheetsSyncService = {
       }
 
       const result = await response.json();
-      return result.status === "success" ? { success: true, routines: result.routines || [] } : { success: false, error: result.message };
+      if (result.status === "success" && Array.isArray(result.rows)) {
+        const programs = this._groupRowsIntoPrograms(result.rows);
+        return { success: true, programs: programs };
+      } else {
+        return { success: false, error: result.message || "Failed to fetch programs" };
+      }
     } catch (error) {
       return { success: false, error: error.message };
     }
+  },
+
+  // Group flat program sheet rows into structured Program objects
+  _groupRowsIntoPrograms(rows) {
+    const programMap = {};
+
+    rows.forEach(row => {
+      if (!row.exerciseName && !row.routineName && !row.programName) return;
+
+      const pName = row.programName || "Imported Program";
+      const pId = row.programId || ('prog-' + pName.toLowerCase().replace(/\s+/g, '-'));
+
+      if (!programMap[pId]) {
+        programMap[pId] = {
+          id: pId,
+          name: pName,
+          routinesMap: {}
+        };
+      }
+
+      const weekNum = row.weekNumber !== undefined ? row.weekNumber : 1;
+      const rName = row.routineName || `Week ${weekNum} Routine`;
+      const rId = row.routineId || (`rt-${pId}-w${weekNum}-${rName.toLowerCase().replace(/\s+/g, '-')}`);
+
+      if (!programMap[pId].routinesMap[rId]) {
+        programMap[pId].routinesMap[rId] = {
+          id: rId,
+          weekNumber: weekNum,
+          name: rName,
+          dayType: row.dayType || "",
+          completed: Boolean(row.completed),
+          completedAt: row.completedAt || null,
+          exercises: []
+        };
+      } else {
+        // If any row marks completed TRUE, preserve completed status
+        if (row.completed) {
+          programMap[pId].routinesMap[rId].completed = true;
+          if (row.completedAt) {
+            programMap[pId].routinesMap[rId].completedAt = row.completedAt;
+          }
+        }
+      }
+
+      if (row.exerciseName) {
+        programMap[pId].routinesMap[rId].exercises.push({
+          name: String(row.exerciseName),
+          weight: parseFloat(row.weight) || 0,
+          setsCount: parseInt(row.sets) || 3,
+          reps: String(row.reps !== undefined ? row.reps : "8"),
+          restTime: row.restTime !== undefined && row.restTime !== "" ? parseInt(row.restTime) : 90,
+          notes: String(row.notes || "")
+        });
+      }
+    });
+
+    return Object.values(programMap).map(p => ({
+      id: p.id,
+      name: p.name,
+      routines: Object.values(p.routinesMap)
+    }));
   },
 
   // Fetch all workout history from Google Sheets
